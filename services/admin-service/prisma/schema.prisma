@@ -1,0 +1,43 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model AuditStream {
+  streamKey    String        @id @map("stream_key") @db.VarChar(160)
+  lastSequence BigInt        @default(0) @map("last_sequence")
+  lastHash     String        @default("0000000000000000000000000000000000000000000000000000000000000000") @map("last_hash") @db.Char(64)
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  records      AuditRecord[]
+
+  @@map("audit_streams")
+}
+
+model AuditRecord {
+  id           String      @id @default(uuid()) @db.Uuid
+  eventId      String      @unique(map: "audit_records_event_id_key") @map("event_id") @db.Uuid
+  streamKey    String      @map("stream_key") @db.VarChar(160)
+  sequence     BigInt
+  action       String      @db.VarChar(100)
+  entityType   String      @map("entity_type") @db.VarChar(80)
+  entityId     String      @map("entity_id") @db.VarChar(128)
+  actorId      String?     @map("actor_id") @db.VarChar(128)
+  occurredAt   DateTime    @map("occurred_at") @db.Timestamptz(6)
+  recordedAt   DateTime    @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  metadata     Json        @default("{}") @db.JsonB
+  previousHash String      @map("previous_hash") @db.Char(64)
+  currentHash  String      @map("current_hash") @db.Char(64)
+  stream       AuditStream @relation(fields: [streamKey], references: [streamKey], onDelete: Restrict)
+
+  @@unique([streamKey, sequence], map: "audit_records_stream_sequence_key")
+  @@unique([streamKey, currentHash], map: "audit_records_stream_current_hash_key")
+  @@index([entityType, entityId, recordedAt(sort: Desc)], map: "audit_records_entity_recorded_at_idx")
+  @@index([actorId, recordedAt(sort: Desc)], map: "audit_records_actor_recorded_at_idx")
+  @@map("audit_records")
+}

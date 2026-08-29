@@ -1,0 +1,124 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LedgerAccountType {
+  CUSTOMER
+  FX_CLEARING
+  FEE_REVENUE
+}
+
+enum NormalSide {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerAccountStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+
+enum PostingType {
+  TRANSFER
+  FX_TRANSFER
+  FEE
+  REVERSAL
+  FUNDING
+}
+
+enum LedgerTransactionStatus {
+  POSTED
+}
+
+enum EntryDirection {
+  DEBIT
+  CREDIT
+}
+
+model LedgerAccount {
+  id               String              @id @default(uuid()) @db.Uuid
+  walletId         String?             @map("wallet_id") @db.Uuid
+  accountType      LedgerAccountType   @map("account_type")
+  currency         String              @db.Char(3)
+  normalSide       NormalSide          @map("normal_side")
+  status           LedgerAccountStatus @default(ACTIVE)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  balance          WalletBalance?
+  entries          LedgerEntry[]
+
+  @@index([currency, status], map: "ledger_accounts_currency_status_idx")
+  @@map("ledger_accounts")
+}
+
+model WalletBalance {
+  ledgerAccountId  String        @id @map("ledger_account_id") @db.Uuid
+  currency         String        @db.Char(3)
+  availableBalance Decimal       @default(0) @map("available_balance") @db.Decimal(28, 8)
+  version          BigInt        @default(0)
+  updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  ledgerAccount    LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+
+  @@map("wallet_balances")
+}
+
+model LedgerTransaction {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  externalReference     String                  @unique(map: "ledger_transactions_external_reference_key") @map("external_reference") @db.Uuid
+  postingType           PostingType             @map("posting_type")
+  status                LedgerTransactionStatus @default(POSTED)
+  sourceCurrency        String                  @map("source_currency") @db.Char(3)
+  targetCurrency        String                  @map("target_currency") @db.Char(3)
+  sourceAmount          Decimal                 @map("source_amount") @db.Decimal(28, 8)
+  targetAmount          Decimal                 @map("target_amount") @db.Decimal(28, 8)
+  fxQuoteId             String?                 @map("fx_quote_id") @db.Uuid
+  lockedFxRate          Decimal?                @map("locked_fx_rate") @db.Decimal(28, 12)
+  reversesTransactionId String?                 @unique(map: "ledger_transactions_reverses_transaction_id_key") @map("reverses_transaction_id") @db.Uuid
+  postedAt              DateTime                @default(now()) @map("posted_at") @db.Timestamptz(6)
+  requestId             String                  @map("request_id") @db.Uuid
+  entries               LedgerEntry[]
+  reversesTransaction   LedgerTransaction?      @relation("LedgerReversal", fields: [reversesTransactionId], references: [id], onDelete: Restrict)
+  reversedBy            LedgerTransaction?      @relation("LedgerReversal")
+
+  @@index([postedAt(sort: Desc), id(sort: Desc)], map: "ledger_transactions_posted_at_id_idx")
+  @@index([fxQuoteId], map: "ledger_transactions_fx_quote_id_idx")
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id                  String            @id @default(uuid()) @db.Uuid
+  ledgerTransactionId String            @map("ledger_transaction_id") @db.Uuid
+  ledgerAccountId     String            @map("ledger_account_id") @db.Uuid
+  sequence            Int               @db.SmallInt
+  direction           EntryDirection
+  amount              Decimal           @db.Decimal(28, 8)
+  currency            String            @db.Char(3)
+  fxQuoteId           String?           @map("fx_quote_id") @db.Uuid
+  lockedFxRate        Decimal?          @map("locked_fx_rate") @db.Decimal(28, 12)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  ledgerTransaction   LedgerTransaction @relation(fields: [ledgerTransactionId], references: [id], onDelete: Restrict)
+  ledgerAccount       LedgerAccount     @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+
+  @@unique([ledgerTransactionId, sequence], map: "ledger_entries_transaction_sequence_key")
+  @@index([ledgerAccountId, createdAt(sort: Desc), id(sort: Desc)], map: "ledger_entries_account_created_id_idx")
+  @@index([ledgerTransactionId], map: "ledger_entries_transaction_id_idx")
+  @@map("ledger_entries")
+}
+
+model LedgerInvariantCheck {
+  id         String   @id @default(uuid()) @db.Uuid
+  checkType  String   @map("check_type") @db.VarChar(40)
+  violations Int
+  details    Json?    @db.JsonB
+  checkedAt  DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+
+  @@index([checkType, checkedAt(sort: Desc)], map: "ledger_invariant_checks_type_checked_at_idx")
+  @@map("ledger_invariant_checks")
+}

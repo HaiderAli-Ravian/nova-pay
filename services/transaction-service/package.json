@@ -1,0 +1,52 @@
+{
+  "name": "@novapay/transaction-service",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "NovaPay Transaction Service",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.22.3",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "build": "npm run prisma:generate && tsc -p tsconfig.build.json",
+    "prisma:generate": "prisma generate --config prisma.config.ts",
+    "prisma:validate": "prisma validate --config prisma.config.ts",
+    "prisma:migrate:deploy": "prisma migrate deploy --config prisma.config.ts",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage --runInBand",
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand --testPathPatterns=app.e2e.spec.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "@nestjs/common": "12.0.1",
+    "@nestjs/core": "12.0.1",
+    "@nestjs/platform-express": "12.0.1",
+    "@nestjs/swagger": "12.0.1",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "pg": "8.16.3",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "12.0.0",
+    "@nestjs/testing": "12.0.1",
+    "@types/express": "5.0.6",
+    "@types/jest": "30.0.0",
+    "@types/node": "26.4.0",
+    "@types/pg": "8.15.6",
+    "@types/supertest": "7.2.1",
+    "jest": "30.5.0",
+    "prisma": "7.10.0",
+    "supertest": "7.2.2",
+    "ts-jest": "29.4.12",
+    "typescript": "6.0.3"
+  }
+}

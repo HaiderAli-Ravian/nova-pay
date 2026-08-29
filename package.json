@@ -1,0 +1,27 @@
+{
+  "name": "nova-pay",
+  "version": "0.2.0",
+  "private": true,
+  "packageManager": "npm@12.0.2",
+  "description": "NovaPay service monorepo",
+  "workspaces": [
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=22.22.3",
+    "npm": ">=10"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.0"
+  },
+  "devDependencies": {
+    "deepmerge-ts": "8.0.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate --workspaces --if-present",
+    "prisma:validate": "npm run prisma:validate --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:cov": "npm run test:cov --workspaces --if-present"
+  }
+}

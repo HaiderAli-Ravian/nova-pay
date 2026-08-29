@@ -1,0 +1,60 @@
+generator client {
+  provider             = "prisma-client"
+  output               = "../src/generated/prisma"
+  moduleFormat         = "esm"
+  importFileExtension  = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum WalletStatus {
+  PENDING
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+
+model User {
+  id                 String     @id @default(uuid()) @db.Uuid
+  externalRef        String     @unique(map: "users_external_ref_key") @map("external_ref") @db.VarChar(100)
+  identityCiphertext Bytes      @map("identity_ciphertext") @db.ByteA
+  identityIv         Bytes      @map("identity_iv") @db.ByteA
+  identityAuthTag    Bytes      @map("identity_auth_tag") @db.ByteA
+  encryptedDek       Bytes      @map("encrypted_dek") @db.ByteA
+  dekIv              Bytes      @map("dek_iv") @db.ByteA
+  dekAuthTag         Bytes      @map("dek_auth_tag") @db.ByteA
+  keyVersion         String     @map("key_version") @db.VarChar(40)
+  emailLookupHmac    Bytes?     @map("email_lookup_hmac") @db.ByteA
+  status             UserStatus @default(ACTIVE)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  wallets            Wallet[]
+
+  @@index([status, createdAt], map: "users_status_created_at_idx")
+  @@map("users")
+}
+
+model Wallet {
+  id              String       @id @default(uuid()) @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  currency        String       @db.Char(3)
+  label           String?      @db.VarChar(80)
+  status          WalletStatus @default(PENDING)
+  ledgerAccountId String?      @map("ledger_account_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, currency], map: "wallets_user_id_currency_key")
+  @@index([userId, status], map: "wallets_user_id_status_idx")
+  @@map("wallets")
+}
