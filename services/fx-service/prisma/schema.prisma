@@ -1,0 +1,37 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum QuoteStatus {
+  ACTIVE
+  CONSUMED
+  EXPIRED
+}
+
+model FxQuote {
+  id                   String      @id @default(uuid()) @db.Uuid
+  clientId             String      @map("client_id") @db.VarChar(100)
+  sourceCurrency       String      @map("source_currency") @db.Char(3)
+  targetCurrency       String      @map("target_currency") @db.Char(3)
+  sourceAmount         Decimal     @map("source_amount") @db.Decimal(28, 8)
+  targetAmount         Decimal     @map("target_amount") @db.Decimal(28, 8)
+  rate                 Decimal     @db.Decimal(28, 12)
+  providerReference    String      @map("provider_reference") @db.VarChar(120)
+  status               QuoteStatus @default(ACTIVE)
+  issuedAt             DateTime    @default(now()) @map("issued_at") @db.Timestamptz(6)
+  expiresAt            DateTime    @map("expires_at") @db.Timestamptz(6)
+  consumedAt           DateTime?   @map("consumed_at") @db.Timestamptz(6)
+  consumedByTransferId String?     @map("consumed_by_transfer_id") @db.Uuid
+  createdRequestId     String      @map("created_request_id") @db.Uuid
+
+  @@index([clientId, issuedAt(sort: Desc)], map: "fx_quotes_client_id_issued_at_idx")
+  @@index([status, expiresAt], map: "fx_quotes_status_expires_at_idx")
+  @@map("fx_quotes")
+}

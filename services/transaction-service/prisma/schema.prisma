@@ -1,0 +1,104 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum IdempotencyState {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum TransferType {
+  DOMESTIC
+  INTERNATIONAL
+}
+
+enum TransferStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum TransferRole {
+  SENDER
+  RECIPIENT
+}
+
+model IdempotencyRecord {
+  id               String           @id @default(uuid()) @db.Uuid
+  clientId         String           @map("client_id") @db.VarChar(100)
+  key              String           @map("idempotency_key") @db.VarChar(128)
+  requestHash      String           @map("request_hash") @db.Char(64)
+  state            IdempotencyState @default(PROCESSING)
+  transferId       String           @unique(map: "idempotency_records_transfer_id_key") @map("transfer_id") @db.Uuid
+  responseStatus   Int?             @map("response_status") @db.SmallInt
+  responseBody     Json?            @map("response_body") @db.JsonB
+  replayExpiresAt  DateTime         @map("replay_expires_at") @db.Timestamptz(6)
+  retentionUntil   DateTime         @map("retention_until") @db.Timestamptz(6)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  transfer         Transfer         @relation(fields: [transferId], references: [id], onDelete: Restrict)
+
+  @@unique([clientId, key], map: "idempotency_records_client_id_key_key")
+  @@index([state, updatedAt], map: "idempotency_records_state_updated_at_idx")
+  @@index([retentionUntil], map: "idempotency_records_retention_until_idx")
+  @@map("idempotency_records")
+}
+
+model Transfer {
+  id                    String              @id @default(uuid()) @db.Uuid
+  clientId              String              @map("client_id") @db.VarChar(100)
+  type                  TransferType
+  status                TransferStatus      @default(PENDING)
+  senderWalletId        String              @map("sender_wallet_id") @db.Uuid
+  recipientWalletId     String              @map("recipient_wallet_id") @db.Uuid
+  sourceCurrency        String              @map("source_currency") @db.Char(3)
+  sourceAmount          Decimal             @map("source_amount") @db.Decimal(28, 8)
+  targetCurrency        String              @map("target_currency") @db.Char(3)
+  targetAmount          Decimal?            @map("target_amount") @db.Decimal(28, 8)
+  fxQuoteId             String?             @map("fx_quote_id") @db.Uuid
+  lockedFxRate          Decimal?            @map("locked_fx_rate") @db.Decimal(28, 12)
+  ledgerTransactionId   String?             @map("ledger_transaction_id") @db.Uuid
+  failureCode           String?             @map("failure_code") @db.VarChar(80)
+  failureMessage        String?             @map("failure_message") @db.VarChar(300)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt           DateTime?           @map("completed_at") @db.Timestamptz(6)
+  version               BigInt              @default(0)
+  idempotencyRecord     IdempotencyRecord?
+  history               TransactionHistory[]
+
+  @@index([clientId, createdAt(sort: Desc)], map: "transfers_client_id_created_at_idx")
+  @@index([status, updatedAt], map: "transfers_status_updated_at_idx")
+  @@index([senderWalletId, createdAt(sort: Desc)], map: "transfers_sender_wallet_id_created_at_idx")
+  @@map("transfers")
+}
+
+model TransactionHistory {
+  id                   String         @id @default(uuid()) @db.Uuid
+  transferId           String         @map("transfer_id") @db.Uuid
+  walletId             String         @map("wallet_id") @db.Uuid
+  role                 TransferRole
+  counterpartyWalletId String         @map("counterparty_wallet_id") @db.Uuid
+  status               TransferStatus
+  amount               Decimal        @db.Decimal(28, 8)
+  currency             String         @db.Char(3)
+  fxQuoteId            String?        @map("fx_quote_id") @db.Uuid
+  occurredAt           DateTime       @map("occurred_at") @db.Timestamptz(6)
+  updatedAt            DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  transfer             Transfer       @relation(fields: [transferId], references: [id], onDelete: Restrict)
+
+  @@unique([transferId, walletId, role], map: "transaction_history_transfer_wallet_role_key")
+  @@index([walletId, occurredAt(sort: Desc), id(sort: Desc)], map: "transaction_history_wallet_occurred_id_idx")
+  @@index([transferId], map: "transaction_history_transfer_id_idx")
+  @@map("transaction_history")
+}

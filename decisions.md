@@ -4,13 +4,17 @@ This document records the decisions that materially affect correctness, reliabil
 
 ## Architecture
 
-NovaPay uses six independently packaged NestJS services in one monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The boundaries match data ownership and assessment responsibilities while allowing each service to maintain its own tests, semantic version, and Docker image.
+NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent `0.2.0` package versions, tests, and Docker images. The boundaries match data ownership and assessment responsibilities without adding a runtime shared package.
 
 All external traffic enters through Nginx. Immediate request/response operations use synchronous HTTP. BullMQ and Redis are limited to asynchronous payroll processing. The design intentionally excludes Kafka, RabbitMQ, a general event bus, Kubernetes, GraphQL, and saga frameworks because they are not required to protect the central financial invariant and would add operational paths that cannot be justified within the assessment.
 
 ## Database ownership and financial authority
 
 The local environment runs one PostgreSQL server with six logical databases: one owned by each service. Service credentials and code prohibit direct access to another service's database, and there are no cross-database foreign keys.
+
+Prisma 7.10 is pinned independently in every service with a service-local generated client, schema, and migration history. Initial migrations use PostgreSQL-native check constraints and partial unique indexes where the Prisma schema cannot express the approved invariant directly. Compose applies migrations through one-shot containers and starts each service only after its migration completes; readiness then performs a live `SELECT 1`. Payroll readiness also sends an authenticated Redis `PING`.
+
+Nginx is the only component with a published host port. PostgreSQL, authenticated Redis, and all service ports stay private to the Compose network. Public business path families route to their owning services, explicit health/Swagger routes support operations, and any path containing an `internal` segment is denied at the gateway.
 
 Account owns user and wallet metadata. Ledger owns ledger accounts, immutable entries, and authoritative balance projections. Account balance endpoints call Ledger synchronously and never store a competing balance. Cross-service relationships use stable identifiers validated through service APIs.
 

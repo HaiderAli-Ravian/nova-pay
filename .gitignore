@@ -1,10 +1,10 @@
 node_modules/
 dist/
 coverage/
+services/*/src/generated/prisma/
 docs/
 .DS_Store
 .env
 .env.*
 !.env.example
-
 
