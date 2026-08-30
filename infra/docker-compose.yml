@@ -142,11 +142,16 @@ services:
     build:
       context: ..
       dockerfile: services/transaction-service/Dockerfile
-    image: nova-pay/transaction-service:0.2.0
+    image: nova-pay/transaction-service:0.3.0
     environment:
       NODE_ENV: production
       PORT: 3002
       DATABASE_URL: postgresql://transaction_user:${TRANSACTION_DB_PASSWORD}@postgres:5432/transaction_db
+      ACCOUNT_BASE_URL: http://account-service:3001
+      LEDGER_BASE_URL: http://ledger-service:3003
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      STALE_PROCESSING_MS: "30000"
+      RECONCILIATION_INTERVAL_MS: "30000"
     expose: ["3002"]
     depends_on:
       transaction-migration:

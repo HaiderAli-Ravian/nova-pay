@@ -32,6 +32,8 @@ describe('transaction-service bootstrap', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    delete process.env.INTERNAL_SERVICE_TOKEN;
+    process.env.NODE_ENV = 'test';
     const testingModule = await Test.createTestingModule({
       imports: [AppModule],
       controllers: [ValidationProbeController],
@@ -125,10 +127,35 @@ describe('transaction-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Transaction Service',
-      version: '0.2.0',
+      version: '0.3.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');
+    expect(response.body.paths).toHaveProperty('/transfers');
+    expect(response.body.paths['/transfers'].post.responses).toEqual(
+      expect.objectContaining({
+        '201': expect.any(Object),
+        '202': expect.any(Object),
+        '409': expect.any(Object),
+        '422': expect.any(Object),
+        '503': expect.any(Object),
+      }),
+    );
+    expect(response.body.paths).toHaveProperty('/transfers/{transferId}');
+    expect(response.body.paths).toHaveProperty(
+      '/wallets/{walletId}/transactions',
+    );
+    expect(response.body.paths).toHaveProperty(
+      '/internal/transfers/{transferId}/reconcile',
+    );
+  });
+
+  it('rejects unauthenticated internal requests before database access', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/internal/transfers/00000000-0000-4000-8000-000000000000')
+      .expect(401);
+
+    expect(response.body).toMatchObject({ code: 'INTERNAL_AUTH_REQUIRED' });
   });
 
   it('places the request ID in structured request logs', async () => {

@@ -5,20 +5,38 @@ import {
   RequestMethod,
 } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { PrincipalService } from './auth/principal.service.js';
+import { AccountClient } from './clients/account.client.js';
+import { InternalHttpClient } from './clients/internal-http.client.js';
+import { LedgerClient } from './clients/ledger.client.js';
 import { HttpExceptionFilter } from './common/http-exception.filter.js';
+import { InternalServiceGuard } from './common/internal-service.guard.js';
 import { RequestContextMiddleware } from './common/request-context.middleware.js';
 import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
 import { ReadinessService } from './health/readiness.service.js';
+import { ReconciliationService } from './transfers/reconciliation.service.js';
+import {
+  InternalTransferController,
+  TransferController,
+} from './transfers/transfer.controller.js';
+import { TransferService } from './transfers/transfer.service.js';
 
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, TransferController, InternalTransferController],
   providers: [
     RequestContextService,
     PrismaService,
     ReadinessService,
+    PrincipalService,
+    InternalServiceGuard,
+    InternalHttpClient,
+    AccountClient,
+    LedgerClient,
+    TransferService,
+    ReconciliationService,
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,

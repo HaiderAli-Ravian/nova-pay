@@ -8,11 +8,13 @@ All six services compile, own an isolated PostgreSQL schema and migration
 history, and expose dependency-aware health and Swagger endpoints with
 consistent validation, error responses, request IDs, and structured logging.
 Docker Compose supplies restricted databases, authenticated Redis, and a single
-Nginx entry point. Account and Ledger provide idempotent wallet provisioning,
-authoritative balances, atomic double-entry posting, and immutable reversals.
-Payroll workers and observability backends remain planned work.
+Nginx entry point. Account, Transaction, and Ledger provide idempotent wallet
+provisioning, authoritative balances, domestic transfer orchestration, atomic
+double-entry posting, immutable reversals, replay-safe retries, reconciliation,
+and cursor-based wallet history. FX execution, Payroll workers, and observability
+backends remain planned work.
 
-## Planned architecture
+## Architecture
 
 NovaPay is a monorepo containing six independently structured NestJS services:
 Account, Transaction, Ledger, FX, Payroll, and Admin. External traffic enters
@@ -132,6 +134,51 @@ Each image uses a multi-stage Node.js 24 Alpine build and runs as the non-root
 `node` user. The Dockerfiles also expose a dedicated one-shot `migration` target
 used by Compose before service startup.
 
+## Domestic transfers and retries
+
+The Transaction Service accepts a development principal through
+`Authorization: Bearer <principal>` and requires a unique `Idempotency-Key` for
+each intended transfer. A request uses wallet IDs created by Account:
+
+```bash
+curl -X POST http://localhost:8080/transfers \
+  -H 'Authorization: Bearer alice' \
+  -H 'Idempotency-Key: transfer-2026-08-30-001' \
+  -H 'Content-Type: application/json' \
+  -d '{"senderWalletId":"34c25a45-3293-41bb-9f56-6ef234f53394","recipientWalletId":"d72ba34e-2391-4916-b039-c856ace82b9e","amount":"100.00000000","currency":"USD"}'
+```
+
+A completed response is stored for replay:
+
+```json
+{
+  "transferId": "9a459c61-392e-453f-a08d-3d684e6be503",
+  "status": "COMPLETED",
+  "sourceAmount": "100.00000000",
+  "sourceCurrency": "USD",
+  "targetAmount": "100.00000000",
+  "targetCurrency": "USD",
+  "ledgerTransactionId": "8b489805-7c56-4d51-9358-bbcf78204e97",
+  "completedAt": "2026-08-30T10:01:00.000Z"
+}
+```
+
+Retry behavior is protected by Transaction and Ledger database constraints:
+
+- Repeating the same key and canonical payload returns the original transfer;
+  simultaneous duplicates have one database winner and one Ledger posting.
+- A Ledger commit followed by a lost HTTP response remains `PROCESSING` until
+  reconciliation finds the posting by the stable transfer ID and completes it.
+- After the 24-hour replay window, the retained key tombstone returns
+  `409 IDEMPOTENCY_KEY_EXPIRED` without moving money again.
+- Reusing a key with a different canonical payload returns
+  `409 IDEMPOTENCY_PAYLOAD_MISMATCH` and leaves the original transfer unchanged.
+- Insufficient funds and other definitive failures are stored and replayed.
+
+Transfer status is available at `GET /transfers/:transferId`. Wallet history is
+available at `GET /wallets/:walletId/transactions?limit=50&cursor=...` and uses an
+opaque cursor over the indexed timestamp/ID ordering rather than deep offsets.
+
 ## Persistence boundaries
 
 - `account_db` owns users and wallet metadata, never balances.
@@ -145,14 +192,8 @@ Cross-service identifiers are UUID scalars without cross-database foreign keys.
 Money uses PostgreSQL `NUMERIC(28,8)` and FX rates use `NUMERIC(28,12)`; the
 application clients expose both as Prisma `Decimal` values.
 
-## Documentation to complete with implementation
+## Documentation still to complete with implementation
 
-- Architecture and service boundaries
-- Setup and run instructions
-- API endpoint summary and request/response examples
-- Swagger URLs
-- Five idempotency scenarios
-- Double-entry invariant
 - FX quote expiry and single-use behavior
 - Payroll concurrency and resumability
 - Audit hash-chain verification

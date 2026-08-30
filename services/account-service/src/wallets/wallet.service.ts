@@ -119,13 +119,17 @@ export class WalletService {
   }
 
   async validation(walletId: string) {
-    const wallet = await this.prisma.db.wallet.findUnique({ where: { id: walletId } });
+    const wallet = await this.prisma.db.wallet.findUnique({
+      where: { id: walletId },
+      include: { user: { select: { externalRef: true } } },
+    });
     if (!wallet) {
       throw walletNotFound();
     }
     return {
       walletId: wallet.id,
       userId: wallet.userId,
+      ownerExternalRef: wallet.user.externalRef,
       currency: wallet.currency,
       status: wallet.status,
       ledgerAccountId: wallet.ledgerAccountId,

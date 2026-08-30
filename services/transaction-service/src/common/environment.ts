@@ -57,3 +57,22 @@ export function requireUrlEnvironmentVariable(
 
   return value;
 }
+
+export function requireSecretEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+  if (!value || value.length < 24) {
+    throw new Error(`${name} must contain at least 24 characters.`);
+  }
+  return value;
+}
+
+export function readPositiveIntegerEnvironmentVariable(
+  name: string,
+  fallback: number,
+): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < 1 || value > 86_400_000) {
+    throw new Error(`${name} must be a positive integer no greater than 86400000.`);
+  }
+  return value;
+}

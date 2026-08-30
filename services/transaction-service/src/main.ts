@@ -5,6 +5,8 @@ import { AppModule } from './app.module.js';
 import { configureApplication } from './bootstrap.js';
 import {
   loadEnvironment,
+  readPositiveIntegerEnvironmentVariable,
+  requireSecretEnvironmentVariable,
   requireUrlEnvironmentVariable,
 } from './common/environment.js';
 import { SERVICE_METADATA } from './service-metadata.js';
@@ -13,6 +15,11 @@ import { readServiceVersion } from './service-version.js';
 async function bootstrap(): Promise<void> {
   const environment = loadEnvironment(SERVICE_METADATA.defaultPort);
   requireUrlEnvironmentVariable('DATABASE_URL', ['postgres:', 'postgresql:']);
+  requireUrlEnvironmentVariable('ACCOUNT_BASE_URL', ['http:', 'https:']);
+  requireUrlEnvironmentVariable('LEDGER_BASE_URL', ['http:', 'https:']);
+  requireSecretEnvironmentVariable('INTERNAL_SERVICE_TOKEN');
+  readPositiveIntegerEnvironmentVariable('STALE_PROCESSING_MS', 30_000);
+  readPositiveIntegerEnvironmentVariable('RECONCILIATION_INTERVAL_MS', 30_000);
   const version = readServiceVersion();
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
