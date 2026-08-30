@@ -125,10 +125,13 @@ describe('payroll-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Payroll Service',
-      version: '0.2.0',
+      version: '0.3.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');
+    expect(response.body.paths).toHaveProperty('/payroll/jobs');
+    expect(response.body.paths).toHaveProperty('/payroll/jobs/{jobId}');
+    expect(response.body.paths).toHaveProperty('/internal/payroll/{jobId}');
   });
 
   it('places the request ID in structured request logs', async () => {

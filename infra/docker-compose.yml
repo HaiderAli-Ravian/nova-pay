@@ -215,17 +215,25 @@ services:
     build:
       context: ..
       dockerfile: services/payroll-service/Dockerfile
-    image: nova-pay/payroll-service:0.2.0
+    image: nova-pay/payroll-service:0.3.0
     environment:
       NODE_ENV: production
       PORT: 3005
       DATABASE_URL: postgresql://payroll_user:${PAYROLL_DB_PASSWORD}@postgres:5432/payroll_db
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ACCOUNT_BASE_URL: http://account-service:3001
+      TRANSACTION_BASE_URL: http://transaction-service:3002
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      PAYROLL_WORKER_ENABLED: "false"
     expose: ["3005"]
     depends_on:
       payroll-migration:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      account-service:
+        condition: service_healthy
+      transaction-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3005/health/ready"]
@@ -233,6 +241,28 @@ services:
       timeout: 3s
       retries: 6
       start_period: 5s
+
+  payroll-worker:
+    <<: *service-defaults
+    image: nova-pay/payroll-service:0.3.0
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://payroll_user:${PAYROLL_DB_PASSWORD}@postgres:5432/payroll_db
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ACCOUNT_BASE_URL: http://account-service:3001
+      TRANSACTION_BASE_URL: http://transaction-service:3002
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      PAYROLL_WORKER_ENABLED: "true"
+    depends_on:
+      payroll-migration:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      account-service:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
 
   admin-service:
     <<: *service-defaults

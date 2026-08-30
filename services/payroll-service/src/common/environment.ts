@@ -57,3 +57,9 @@ export function requireUrlEnvironmentVariable(
 
   return value;
 }
+
+export function requireEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+  if (!value?.trim()) throw new Error(`${name} is required.`);
+  return value;
+}

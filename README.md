@@ -13,7 +13,9 @@ provisioning, authoritative balances, domestic transfer orchestration, atomic
 double-entry posting, immutable reversals, replay-safe retries, reconciliation,
 and cursor-based wallet history. FX quotes and international transfers add
 database-timed expiry, single-use quote consumption, and independently balanced
-currency legs. Payroll workers and observability backends remain planned work.
+currency legs. Payroll adds durable bulk-job submission, deterministic BullMQ
+work, employer-scoped serialization, exact item checkpoints, and restart-safe
+Transaction retries. Observability backends remain planned work.
 
 ## Architecture
 
@@ -102,8 +104,8 @@ npm run start:dev --workspace @novapay/account-service
 ```
 
 Copy that service's `.env.example` to an untracked `.env` or export its values.
-Every service requires its own `DATABASE_URL`; Payroll additionally requires an
-authenticated `REDIS_URL`. A valid process stays live when a dependency is down,
+Every service requires its own `DATABASE_URL`; Payroll additionally requires a
+`REDIS_URL` (a password is optional for local Redis). A valid process stays live when a dependency is down,
 but `/health/ready` returns `503 SERVICE_NOT_READY` until dependencies recover.
 
 The default service ports are:
@@ -211,6 +213,34 @@ transaction and all four entries, balancing source and target currencies
 independently through clearing accounts. Provider failure returns
 `503 FX_PROVIDER_UNAVAILABLE` and creates no cached or stale substitute quote.
 
+## Payroll jobs
+
+Submit up to 15,000 uniquely identified payments. The complete request is
+canonicalized, the job and its items are committed before enqueue, and the
+returned job UUID is also the deterministic BullMQ job ID:
+
+```bash
+curl -X POST http://localhost:8080/payroll/jobs \
+  -H 'Authorization: Bearer employer-a' \
+  -H 'Idempotency-Key: payroll-2026-08-001' \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceWalletId":"c5511d5e-7bea-4215-a86a-dac725114b25","currency":"USD","items":[{"externalItemId":"employee-001-2026-08","recipientWalletId":"d72ba34e-2391-4916-b039-c856ace82b9e","amount":"2500.00000000"}]}'
+```
+
+Read progress with `GET /payroll/jobs/:jobId`. The response reports pending,
+processing, completed, and failed counts plus bounded safe failure summaries.
+Workers process deterministic batches while holding a renewable Redis lease per
+employer. Each item is claimed with an ownership token and calls Transaction
+with `payroll:{jobId}:{itemId}` as its stable idempotency key. A committed item
+checkpoint and its job counter update occur in one PostgreSQL transaction.
+
+BullMQ applies five bounded exponential-backoff attempts and retains failed jobs
+for inspection. Nonterminal database jobs are re-enqueued after restart. If a
+Transaction response is lost, the worker repeats the same item key and receives
+the original transfer rather than paying twice. If Redis is unavailable during
+submission, the durable job remains recoverable and the API returns
+`503 QUEUE_UNAVAILABLE`.
+
 ## Persistence boundaries
 
 - `account_db` owns users and wallet metadata, never balances.
@@ -226,7 +256,6 @@ application clients expose both as Prisma `Decimal` values.
 
 ## Documentation still to complete with implementation
 
-- Payroll concurrency and resumability
 - Audit hash-chain verification
 - Observability and alerting
 - Time-pressure tradeoffs and production improvements

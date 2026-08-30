@@ -4,7 +4,7 @@ This document records the decisions that materially affect correctness, reliabil
 
 ## Architecture
 
-NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction and Ledger are currently `0.4.0`; Account and FX are `0.3.0`; Payroll and Admin are `0.2.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
+NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction and Ledger are currently `0.4.0`; Account, FX, and Payroll are `0.3.0`; Admin is `0.2.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
 
 All external traffic enters through Nginx. Immediate request/response operations use synchronous HTTP. BullMQ and Redis are limited to asynchronous payroll processing. The design intentionally excludes Kafka, RabbitMQ, a general event bus, Kubernetes, GraphQL, and saga frameworks because they are not required to protect the central financial invariant and would add operational paths that cannot be justified within the assessment.
 
@@ -78,11 +78,11 @@ The exact quote ID and locked rate are recorded on the Transaction and Ledger re
 
 ## Payroll concurrency and resumability
 
-Payroll persists a job and all uniquely identified items before enqueueing a deterministic BullMQ job. Workers may process different employers concurrently, but a worker must hold a renewable Redis lease keyed by employer/source wallet before processing that employer. This makes effective concurrency one for all debits from the same payroll source without holding a database transaction open for thousands of items.
+Payroll persists a job and all uniquely identified items before enqueueing a deterministic BullMQ job whose ID equals the payroll job UUID. Workers may process different employers concurrently, but a worker must hold a renewable Redis lease keyed by employer before processing that employer. Acquire uses `SET NX PX`; renew and release are ownership-token-checked Redis scripts. This makes effective concurrency one for an employer without holding a database transaction open for thousands of items.
 
 PostgreSQL item rows are the durable checkpoint. Before calling Transaction, an item moves from `PENDING` to `PROCESSING` with an attempt token. It uses a stable transfer key derived from payroll job ID and item ID. A definitive result is immediately checkpointed as `COMPLETED` or `FAILED`.
 
-If a worker stops after 5,000 of 14,000 items, completed rows are never selected again. Stale processing rows are first reconciled through Transaction with the same derived key; an already completed transfer is checkpointed without paying again. Remaining items then continue. The Redis lease reduces source-account contention, while Transaction/Ledger idempotency and row locks remain the final correctness controls if a lease is lost.
+If a worker stops after 5,000 of 14,000 items, completed rows are never selected again. Processing rows are first reconciled through Transaction with the same derived key; an already completed transfer is checkpointed without paying again. Remaining items then continue. BullMQ uses five bounded exponential-backoff attempts and retains failed work for inspection; a database recovery scan re-enqueues nonterminal jobs after restarts or queue outages. The Redis lease reduces source-account contention, while Transaction/Ledger idempotency and row locks remain the final correctness controls if a lease is lost. The synchronous submission API is capped at 15,000 items; streaming ingestion is deferred.
 
 ## Money precision and transaction history
 

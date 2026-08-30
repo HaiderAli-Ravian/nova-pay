@@ -63,6 +63,8 @@ model PayrollJob {
   failedItems       Int                       @default(0) @map("failed_items")
   totalAmount       Decimal                   @map("total_amount") @db.Decimal(28, 8)
   bullmqJobId       String?                   @map("bullmq_job_id") @db.VarChar(160)
+  queueFailureCount Int                       @default(0) @map("queue_failure_count")
+  lastQueueErrorCode String?                  @map("last_queue_error_code") @db.VarChar(80)
   createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt         DateTime?                 @map("started_at") @db.Timestamptz(6)
   completedAt       DateTime?                 @map("completed_at") @db.Timestamptz(6)
@@ -78,6 +80,7 @@ model PayrollJob {
 model PayrollItem {
   id                       String            @id @default(uuid()) @db.Uuid
   payrollJobId             String            @map("payroll_job_id") @db.Uuid
+  sequence                 Int
   externalItemId           String            @map("external_item_id") @db.VarChar(128)
   recipientWalletId        String            @map("recipient_wallet_id") @db.Uuid
   amount                   Decimal           @db.Decimal(28, 8)
@@ -95,7 +98,8 @@ model PayrollItem {
   payrollJob               PayrollJob        @relation(fields: [payrollJobId], references: [id], onDelete: Restrict)
 
   @@unique([payrollJobId, externalItemId], map: "payroll_items_job_external_item_key")
-  @@index([payrollJobId, status, id], map: "payroll_items_job_status_id_idx")
+  @@unique([payrollJobId, sequence], map: "payroll_items_job_sequence_key")
+  @@index([payrollJobId, status, sequence], map: "payroll_items_job_status_sequence_idx")
   @@index([status, processingStartedAt], map: "payroll_items_status_processing_started_at_idx")
   @@map("payroll_items")
 }

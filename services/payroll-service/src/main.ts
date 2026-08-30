@@ -5,6 +5,7 @@ import { AppModule } from './app.module.js';
 import { configureApplication } from './bootstrap.js';
 import {
   loadEnvironment,
+  requireEnvironmentVariable,
   requireUrlEnvironmentVariable,
 } from './common/environment.js';
 import { SERVICE_METADATA } from './service-metadata.js';
@@ -14,6 +15,9 @@ async function bootstrap(): Promise<void> {
   const environment = loadEnvironment(SERVICE_METADATA.defaultPort);
   requireUrlEnvironmentVariable('DATABASE_URL', ['postgres:', 'postgresql:']);
   requireUrlEnvironmentVariable('REDIS_URL', ['redis:']);
+  requireUrlEnvironmentVariable('ACCOUNT_BASE_URL', ['http:', 'https:']);
+  requireUrlEnvironmentVariable('TRANSACTION_BASE_URL', ['http:', 'https:']);
+  requireEnvironmentVariable('INTERNAL_SERVICE_TOKEN');
   const version = readServiceVersion();
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
