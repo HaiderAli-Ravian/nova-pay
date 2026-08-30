@@ -6,6 +6,7 @@ import { configureApplication } from './bootstrap.js';
 import {
   loadEnvironment,
   readPositiveIntegerEnvironmentVariable,
+  requireBase64KeyEnvironmentVariable,
   requireSecretEnvironmentVariable,
   requireUrlEnvironmentVariable,
 } from './common/environment.js';
@@ -19,6 +20,7 @@ async function bootstrap(): Promise<void> {
   requireUrlEnvironmentVariable('LEDGER_BASE_URL', ['http:', 'https:']);
   requireUrlEnvironmentVariable('FX_BASE_URL', ['http:', 'https:']);
   requireSecretEnvironmentVariable('INTERNAL_SERVICE_TOKEN');
+  requireBase64KeyEnvironmentVariable('HISTORY_CURSOR_HMAC_KEY');
   readPositiveIntegerEnvironmentVariable('STALE_PROCESSING_MS', 30_000);
   readPositiveIntegerEnvironmentVariable('RECONCILIATION_INTERVAL_MS', 30_000);
   const version = readServiceVersion();

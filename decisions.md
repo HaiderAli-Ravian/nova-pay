@@ -4,7 +4,7 @@ This document records the decisions that materially affect correctness, reliabil
 
 ## Architecture
 
-NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Account, Transaction, and Ledger are currently `0.4.0`; FX, Payroll, and Admin are `0.3.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
+NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction is currently `0.5.0`; Account and Ledger are `0.4.0`; FX, Payroll, and Admin are `0.3.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
 
 All external traffic enters through Nginx. Immediate request/response operations use synchronous HTTP. BullMQ and Redis are limited to asynchronous payroll processing. The design intentionally excludes Kafka, RabbitMQ, a general event bus, Kubernetes, GraphQL, and saga frameworks because they are not required to protect the central financial invariant and would add operational paths that cannot be justified within the assessment.
 
@@ -88,7 +88,7 @@ If a worker stops after 5,000 of 14,000 items, completed rows are never selected
 
 Amounts use PostgreSQL `NUMERIC(28,8)` and Prisma Decimal; FX rates use `NUMERIC(28,12)`. Currency minor-unit validation is explicit, and JavaScript floating point is not used for financial arithmetic.
 
-Transaction Service maintains a denormalized history row per participating wallet. Queries use an opaque cursor over `(walletId, occurredAt DESC, id DESC)` and a matching composite index. They do not use deep offset pagination, aggregate Ledger rows, or recalculate balances on every page request.
+Transaction Service maintains a denormalized history row per participating wallet. Queries use an HMAC-authenticated, wallet-bound cursor and tuple seek over `(walletId, occurredAt DESC, id DESC)` with a matching composite index and `limit + 1`. They select projection-local response fields and do not use deep offset pagination, aggregate Ledger rows, or recalculate balances. A bounded maintenance command repairs the projection from Transaction-owned transfer rows without querying Ledger.
 
 ## Field-level envelope encryption
 

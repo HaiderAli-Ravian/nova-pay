@@ -146,7 +146,7 @@ services:
     build:
       context: ..
       dockerfile: services/transaction-service/Dockerfile
-    image: nova-pay/transaction-service:0.4.0
+    image: nova-pay/transaction-service:0.5.0
     environment:
       NODE_ENV: production
       PORT: 3002
@@ -155,6 +155,7 @@ services:
       LEDGER_BASE_URL: http://ledger-service:3003
       FX_BASE_URL: http://fx-service:3004
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      HISTORY_CURSOR_HMAC_KEY: ${HISTORY_CURSOR_HMAC_KEY:?Set HISTORY_CURSOR_HMAC_KEY in infra/.env}
       STALE_PROCESSING_MS: "30000"
       RECONCILIATION_INTERVAL_MS: "30000"
     expose: ["3002"]

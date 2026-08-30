@@ -66,6 +66,18 @@ export function requireSecretEnvironmentVariable(name: string): string {
   return value;
 }
 
+export function requireBase64KeyEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required.`);
+  }
+  const decoded = Buffer.from(value, 'base64');
+  if (decoded.length !== 32 || decoded.toString('base64') !== value) {
+    throw new Error(`${name} must be a canonical base64-encoded 32-byte key.`);
+  }
+  return value;
+}
+
 export function readPositiveIntegerEnvironmentVariable(
   name: string,
   fallback: number,

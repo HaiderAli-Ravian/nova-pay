@@ -126,7 +126,11 @@ export class TransferController {
   @ApiNotFoundResponse({ type: ErrorResponseDto })
   @ApiServiceUnavailableResponse({ type: ErrorResponseDto })
   @ApiQuery({ name: 'limit', required: false, example: 50 })
-  @ApiQuery({ name: 'cursor', required: false })
+  @ApiQuery({
+    name: 'cursor',
+    required: false,
+    description: 'Opaque HMAC-authenticated cursor returned by the previous page',
+  })
   history(
     @Req() request: Request,
     @Param('walletId', new ParseUUIDPipe()) walletId: string,

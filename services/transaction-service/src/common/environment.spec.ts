@@ -1,4 +1,7 @@
-import { loadEnvironment } from './environment.js';
+import {
+  loadEnvironment,
+  requireBase64KeyEnvironmentVariable,
+} from './environment.js';
 
 describe('loadEnvironment', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -47,6 +50,31 @@ describe('loadEnvironment', () => {
       'NODE_ENV must be one of development, test, or production.',
     );
   });
+});
+
+describe('requireBase64KeyEnvironmentVariable', () => {
+  const originalValue = process.env.HISTORY_CURSOR_HMAC_KEY;
+
+  afterEach(() => {
+    if (originalValue === undefined) delete process.env.HISTORY_CURSOR_HMAC_KEY;
+    else process.env.HISTORY_CURSOR_HMAC_KEY = originalValue;
+  });
+
+  it('accepts exactly 32 canonical base64-encoded bytes', () => {
+    const value = Buffer.alloc(32, 7).toString('base64');
+    process.env.HISTORY_CURSOR_HMAC_KEY = value;
+    expect(requireBase64KeyEnvironmentVariable('HISTORY_CURSOR_HMAC_KEY')).toBe(value);
+  });
+
+  it.each(['short', Buffer.alloc(31).toString('base64'), 'not-base64!'])(
+    'rejects invalid key %s',
+    (value) => {
+      process.env.HISTORY_CURSOR_HMAC_KEY = value;
+      expect(() => requireBase64KeyEnvironmentVariable('HISTORY_CURSOR_HMAC_KEY')).toThrow(
+        'HISTORY_CURSOR_HMAC_KEY must be a canonical base64-encoded 32-byte key.',
+      );
+    },
+  );
 });
 
 function restoreEnvironmentValue(

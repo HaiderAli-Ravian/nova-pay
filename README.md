@@ -107,7 +107,8 @@ npm run start:dev --workspace @novapay/account-service
 
 Copy that service's `.env.example` to an untracked `.env` or export its values.
 Every service requires its own `DATABASE_URL`; Payroll additionally requires a
-`REDIS_URL` (a password is optional for local Redis). A valid process stays live when a dependency is down,
+`REDIS_URL` (a password is optional for local Redis), and Transaction requires a
+32-byte base64 `HISTORY_CURSOR_HMAC_KEY` (`openssl rand -base64 32`). A valid process stays live when a dependency is down,
 but `/health/ready` returns `503 SERVICE_NOT_READY` until dependencies recover.
 
 The default service ports are:
@@ -182,7 +183,21 @@ Retry behavior is protected by Transaction and Ledger database constraints:
 
 Transfer status is available at `GET /transfers/:transferId`. Wallet history is
 available at `GET /wallets/:walletId/transactions?limit=50&cursor=...` and uses an
-opaque cursor over the indexed timestamp/ID ordering rather than deep offsets.
+HMAC-authenticated, wallet-bound cursor over the indexed timestamp/ID ordering
+rather than deep offsets. Pages use tuple seek and `limit + 1`, select only the
+history projection, and never recalculate balances or query Ledger. Repair the
+projection from Transaction-owned transfer rows with:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/transaction_db \
+npm run history:rebuild --workspace @novapay/transaction-service
+```
+
+A local warm-cache profile over 25,000 projection rows completed 20,000 direct
+service/database page reads at concurrency 8 with zero errors, 5,075.09
+requests/second, p95 2.67 ms, and p99 2.96 ms. This is bounded implementation
+evidence, not a production capacity claim: it excludes Nginx/HTTP, the Account
+authorization network hop, and multi-service contention.
 
 ## FX quotes and international transfers
 

@@ -5,6 +5,7 @@ import { AccountClient, type WalletValidation } from '../clients/account.client.
 import { FxClient, type ConsumeQuoteCommand, type ConsumedQuote } from '../clients/fx.client.js';
 import { LedgerClient, type PostingCommand, type LedgerPosting } from '../clients/ledger.client.js';
 import { UpstreamHttpError, UpstreamUnavailableError } from '../clients/upstream-error.js';
+import { HistoryProjectionService } from '../history/history-projection.service.js';
 import { TransferService } from './transfer.service.js';
 
 const describeWithDatabase = process.env.TRANSFER_TEST_DATABASE_URL
@@ -21,6 +22,7 @@ describeWithDatabase('TransferService database integration', () => {
   beforeAll(() => {
     process.env.DATABASE_URL = process.env.TRANSFER_TEST_DATABASE_URL;
     process.env.STALE_PROCESSING_MS = '30000';
+    process.env.HISTORY_CURSOR_HMAC_KEY = Buffer.alloc(32, 9).toString('base64');
     prisma = new PrismaService();
   });
 
@@ -93,6 +95,76 @@ describeWithDatabase('TransferService database integration', () => {
     await expect(service.history('alice', setup.senderId, 2, 'tampered')).rejects.toMatchObject({
       response: { code: 'INVALID_CURSOR' },
     });
+    await expect(service.history('bob', setup.recipientId, 2, first.nextCursor!)).rejects
+      .toMatchObject({ response: { code: 'INVALID_CURSOR' } });
+  });
+
+  it('paginates equal timestamps by descending ID without duplicates or gaps', async () => {
+    const setup = walletSetup(account);
+    for (const amount of ['1', '2', '3', '4', '5']) {
+      await service.createDomestic('alice', randomUUID(), { ...setup.command, amount });
+    }
+    const occurredAt = new Date('2026-08-30T12:00:00.000Z');
+    await prisma.db.transactionHistory.updateMany({
+      where: { walletId: setup.senderId },
+      data: { occurredAt },
+    });
+    const expected = await prisma.db.transactionHistory.findMany({
+      where: { walletId: setup.senderId },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+      select: { transferId: true },
+    });
+    const actual: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await service.history('alice', setup.senderId, 2, cursor);
+      actual.push(...page.items.map((item) => item.transferId));
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+
+    expect(actual).toEqual(expected.map((row) => row.transferId));
+    expect(new Set(actual).size).toBe(5);
+  });
+
+  it('repairs missing, corrupted, and stale projection rows from transfer-owned data', async () => {
+    const setup = walletSetup(account);
+    const completed = await service.createDomestic('alice', randomUUID(), setup.command);
+    await prisma.db.transactionHistory.updateMany({
+      where: { transferId: completed.body.transferId, role: 'SENDER' },
+      data: { amount: '999.00000000', status: 'FAILED' },
+    });
+    await prisma.db.transactionHistory.deleteMany({
+      where: { transferId: completed.body.transferId, role: 'RECIPIENT' },
+    });
+    await prisma.db.transactionHistory.create({
+      data: {
+        transferId: completed.body.transferId,
+        walletId: randomUUID(),
+        role: 'RECIPIENT',
+        counterpartyWalletId: setup.senderId,
+        status: 'FAILED',
+        amount: '1.00000000',
+        currency: 'USD',
+        occurredAt: new Date('2020-01-01T00:00:00.000Z'),
+      },
+    });
+
+    const result = await new HistoryProjectionService(prisma).rebuild(1);
+    const rows = await prisma.db.transactionHistory.findMany({
+      where: { transferId: completed.body.transferId },
+      orderBy: { role: 'asc' },
+    });
+
+    expect(result).toMatchObject({ transfersScanned: 1, rowsWritten: 2, rowsRemoved: 1 });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.status === 'COMPLETED')).toBe(true);
+    expect(rows.map((row) => row.amount.toFixed(8))).toEqual([
+      '10.00000000',
+      '10.00000000',
+    ]);
+    expect(rows.map((row) => row.walletId)).toEqual(
+      expect.arrayContaining([setup.senderId, setup.recipientId]),
+    );
   });
 
   it('scenario B gives concurrent identical requests one database winner and one posting', async () => {

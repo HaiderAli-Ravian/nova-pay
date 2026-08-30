@@ -127,7 +127,7 @@ describe('transaction-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Transaction Service',
-      version: '0.4.0',
+      version: '0.5.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');

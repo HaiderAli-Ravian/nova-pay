@@ -18,6 +18,7 @@ import { RequestLoggingInterceptor } from './common/request-logging.interceptor.
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
 import { ReadinessService } from './health/readiness.service.js';
+import { HistoryProjectionService } from './history/history-projection.service.js';
 import { ReconciliationService } from './transfers/reconciliation.service.js';
 import {
   InternalTransferController,
@@ -37,6 +38,7 @@ import { TransferService } from './transfers/transfer.service.js';
     AccountClient,
     LedgerClient,
     FxClient,
+    HistoryProjectionService,
     TransferService,
     ReconciliationService,
     {

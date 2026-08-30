@@ -17,6 +17,10 @@ import { LedgerClient, type LedgerPosting } from '../clients/ledger.client.js';
 import { UpstreamHttpError, UpstreamUnavailableError } from '../clients/upstream-error.js';
 import { RequestContextService } from '../common/request-context.service.js';
 import { PrismaService } from '../database/prisma.service.js';
+import {
+  decodeHistoryCursor,
+  encodeHistoryCursor,
+} from '../history/history-cursor.js';
 import { CreateInternationalTransferDto, CreateTransferDto } from './dto/create-transfer.dto.js';
 import {
   HistoryPageDto,
@@ -122,22 +126,25 @@ export class TransferService {
         message: 'The wallet is not owned by this principal.',
       });
     }
-    const after = cursor ? decodeCursor(cursor) : undefined;
-    const rows = await this.prisma.db.transactionHistory.findMany({
-      where: {
-        walletId,
-        ...(after
-          ? {
-              OR: [
-                { occurredAt: { lt: after.occurredAt } },
-                { occurredAt: after.occurredAt, id: { lt: after.id } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-    });
+    const after = cursor ? decodeHistoryCursor(walletId, cursor) : undefined;
+    const pageSize = limit + 1;
+    const rows = await this.prisma.db.$queryRaw<HistoryQueryRow[]>(Prisma.sql`
+      SELECT
+        "id",
+        "transfer_id" AS "transferId",
+        "role"::text AS "role",
+        "status"::text AS "status",
+        "amount"::text AS "amount",
+        "currency",
+        "occurred_at" AS "occurredAt"
+      FROM "transaction_history"
+      WHERE "wallet_id" = ${walletId}::uuid
+      ${after
+        ? Prisma.sql`AND ("occurred_at", "id") < (${after.occurredAt}, ${after.id}::uuid)`
+        : Prisma.empty}
+      ORDER BY "occurred_at" DESC, "id" DESC
+      LIMIT ${pageSize}
+    `);
     const hasMore = rows.length > limit;
     const page = rows.slice(0, limit);
     const last = page.at(-1);
@@ -145,14 +152,14 @@ export class TransferService {
       items: page.map((row) => ({
         transferId: row.transferId,
         direction: row.role === 'SENDER' ? 'OUTGOING' : 'INCOMING',
-        amount: row.amount.toFixed(8),
+        amount: new Prisma.Decimal(row.amount).toFixed(8),
         currency: row.currency,
         status: row.status,
         occurredAt: row.occurredAt.toISOString(),
       })),
       nextCursor:
         hasMore && last
-          ? encodeCursor({ occurredAt: last.occurredAt, id: last.id })
+          ? encodeHistoryCursor(walletId, { occurredAt: last.occurredAt, id: last.id })
           : null,
     };
   }
@@ -919,39 +926,12 @@ function staleProcessingMs(): number {
   return Number.isInteger(value) && value > 0 ? value : 30_000;
 }
 
-interface CursorValue {
-  occurredAt: Date;
+interface HistoryQueryRow {
   id: string;
-}
-
-function encodeCursor(value: CursorValue): string {
-  return Buffer.from(
-    JSON.stringify({ t: value.occurredAt.toISOString(), id: value.id }),
-  ).toString('base64url');
-}
-
-function decodeCursor(cursor: string): CursorValue {
-  try {
-    const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
-      t?: unknown;
-      id?: unknown;
-    };
-    if (
-      typeof value.t !== 'string' ||
-      typeof value.id !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.id)
-    ) {
-      throw new Error('Invalid cursor fields.');
-    }
-    const occurredAt = new Date(value.t);
-    if (Number.isNaN(occurredAt.getTime()) || occurredAt.toISOString() !== value.t) {
-      throw new Error('Invalid cursor timestamp.');
-    }
-    return { occurredAt, id: value.id };
-  } catch {
-    throw new BadRequestException({
-      code: 'INVALID_CURSOR',
-      message: 'The history cursor is invalid.',
-    });
-  }
+  transferId: string;
+  role: 'SENDER' | 'RECIPIENT';
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REVERSED';
+  amount: string;
+  currency: string;
+  occurredAt: Date;
 }
