@@ -32,6 +32,7 @@ describe('account-service bootstrap', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    delete process.env.INTERNAL_SERVICE_TOKEN;
     const testingModule = await Test.createTestingModule({
       imports: [AppModule],
       controllers: [ValidationProbeController],
@@ -125,10 +126,23 @@ describe('account-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Account Service',
-      version: '0.2.0',
+      version: '0.3.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');
+    expect(response.body.paths).toHaveProperty('/wallets');
+    expect(response.body.paths).toHaveProperty('/wallets/{walletId}/balance');
+    expect(response.body.paths).toHaveProperty(
+      '/internal/wallets/{walletId}/reconcile',
+    );
+  });
+
+  it('rejects unauthenticated internal requests before database access', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/internal/wallets/00000000-0000-4000-8000-000000000000/validation')
+      .expect(401);
+
+    expect(response.body).toMatchObject({ code: 'INTERNAL_AUTH_REQUIRED' });
   });
 
   it('places the request ID in structured request logs', async () => {

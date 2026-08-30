@@ -72,6 +72,7 @@ model WalletBalance {
 model LedgerTransaction {
   id                    String                  @id @default(uuid()) @db.Uuid
   externalReference     String                  @unique(map: "ledger_transactions_external_reference_key") @map("external_reference") @db.Uuid
+  commandHash           String                  @map("command_hash") @db.Char(64)
   postingType           PostingType             @map("posting_type")
   status                LedgerTransactionStatus @default(POSTED)
   sourceCurrency        String                  @map("source_currency") @db.Char(3)

@@ -4,13 +4,13 @@ NovaPay is a backend engineering assessment focused on safe financial transfers,
 idempotent bulk disbursements, time-locked foreign-exchange quotes, scalable
 transaction history, and operational visibility.
 
-Phases 1 and 2 establish the service and persistence foundations. All six
-services compile, own an isolated PostgreSQL schema and migration history, and
-expose dependency-aware health and Swagger endpoints with consistent validation,
-error responses, request IDs, and structured logging. Docker Compose supplies
-restricted databases, authenticated Redis, and a single Nginx entry point.
-Financial workflows, payroll workers, and observability backends are implemented
-in later phases.
+All six services compile, own an isolated PostgreSQL schema and migration
+history, and expose dependency-aware health and Swagger endpoints with
+consistent validation, error responses, request IDs, and structured logging.
+Docker Compose supplies restricted databases, authenticated Redis, and a single
+Nginx entry point. Account and Ledger provide idempotent wallet provisioning,
+authoritative balances, atomic double-entry posting, and immutable reversals.
+Payroll workers and observability backends remain planned work.
 
 ## Planned architecture
 
@@ -124,7 +124,7 @@ Use the repository root as the Docker build context:
 ```bash
 docker build \
   -f services/account-service/Dockerfile \
-  -t nova-pay/account-service:0.2.0 \
+  -t nova-pay/account-service:0.3.0 \
   .
 ```
 

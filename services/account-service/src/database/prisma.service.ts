@@ -7,7 +7,11 @@ export class PrismaService implements OnModuleDestroy {
   private client: PrismaClient | undefined;
 
   async checkConnection(): Promise<void> {
-    await this.getClient().$queryRaw`SELECT 1`;
+    await this.db.$queryRaw`SELECT 1`;
+  }
+
+  get db(): PrismaClient {
+    return this.getClient();
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -35,4 +39,3 @@ export class PrismaService implements OnModuleDestroy {
     return this.client;
   }
 }
-

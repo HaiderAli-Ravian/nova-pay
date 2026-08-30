@@ -119,11 +119,13 @@ services:
     build:
       context: ..
       dockerfile: services/account-service/Dockerfile
-    image: nova-pay/account-service:0.2.0
+    image: nova-pay/account-service:0.3.0
     environment:
       NODE_ENV: production
       PORT: 3001
       DATABASE_URL: postgresql://account_user:${ACCOUNT_DB_PASSWORD}@postgres:5432/account_db
+      LEDGER_BASE_URL: http://ledger-service:3003
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
     expose: ["3001"]
     depends_on:
       account-migration:
@@ -161,11 +163,13 @@ services:
     build:
       context: ..
       dockerfile: services/ledger-service/Dockerfile
-    image: nova-pay/ledger-service:0.2.0
+    image: nova-pay/ledger-service:0.3.0
     environment:
       NODE_ENV: production
       PORT: 3003
       DATABASE_URL: postgresql://ledger_user:${LEDGER_DB_PASSWORD}@postgres:5432/ledger_db
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      ENABLE_TEST_FUNDING: "false"
     expose: ["3003"]
     depends_on:
       ledger-migration:
