@@ -55,4 +55,4 @@ USER node
 
 EXPOSE 3004
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "--import", "./dist/observability/register.js", "dist/main.js"]

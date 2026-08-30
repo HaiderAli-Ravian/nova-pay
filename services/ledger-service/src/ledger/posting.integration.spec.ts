@@ -7,7 +7,10 @@ import {
 } from './dto/ledger-commands.dto.js';
 import { LedgerAccountService } from './ledger-account.service.js';
 import { LedgerMetricsService } from './ledger-metrics.service.js';
+import { LedgerInvariantService } from './ledger-invariant.service.js';
 import { PostingService } from './posting.service.js';
+import { MetricsService } from '../observability/metrics.service.js';
+import { RequestContextService } from '../common/request-context.service.js';
 
 const describeWithDatabase = process.env.LEDGER_TEST_DATABASE_URL
   ? describe
@@ -24,7 +27,11 @@ describeWithDatabase('PostingService database integration', () => {
     process.env.NODE_ENV = 'test';
     prisma = new PrismaService();
     accounts = new LedgerAccountService(prisma);
-    postings = new PostingService(prisma, new LedgerMetricsService());
+    postings = new PostingService(
+      prisma,
+      new LedgerMetricsService(new MetricsService()),
+      new RequestContextService(),
+    );
   });
 
   afterAll(async () => {
@@ -153,6 +160,37 @@ describeWithDatabase('PostingService database integration', () => {
     expect(stored.entries.every((entry) => entry.lockedFxRate?.toFixed(12) === '0.920000000000')).toBe(true);
     expect((await accounts.balance(sourceWalletId)).available).toBe('0.00000000');
     expect((await accounts.balance(targetWalletId)).available).toBe('92.00000000');
+  });
+
+  it('publishes zero for valid journals and detects a privileged missing-entry fixture', async () => {
+    const ledgerMetrics = new LedgerMetricsService(new MetricsService());
+    const invariants = new LedgerInvariantService(prisma, ledgerMetrics);
+    await expect(invariants.verify()).resolves.toMatchObject({ violations: 0 });
+
+    await prisma.db.$executeRawUnsafe(
+      'ALTER TABLE "ledger_transactions" DISABLE TRIGGER "ledger_transactions_balanced"',
+    );
+    try {
+      await prisma.db.ledgerTransaction.create({
+        data: {
+          externalReference: randomUUID(),
+          commandHash: '0'.repeat(64),
+          postingType: 'TRANSFER',
+          sourceCurrency: 'USD',
+          targetCurrency: 'USD',
+          sourceAmount: '1.00000000',
+          targetAmount: '1.00000000',
+          requestId: randomUUID(),
+        },
+      });
+    } finally {
+      await prisma.db.$executeRawUnsafe(
+        'ALTER TABLE "ledger_transactions" ENABLE TRIGGER "ledger_transactions_balanced"',
+      );
+    }
+
+    await expect(invariants.verify()).resolves.toMatchObject({ violations: 1 });
+    expect(ledgerMetrics.snapshot().invariantViolations).toBe(1);
   });
 });
 

@@ -13,15 +13,18 @@ import { PrismaService } from './database/prisma.service.js';
 import { PrincipalService } from './auth/principal.service.js';
 import { InternalServiceGuard } from './common/internal-service.guard.js';
 import { HealthController } from './health/health.controller.js';
+import { MetricsController } from './observability/metrics.controller.js';
+import { MetricsService } from './observability/metrics.service.js';
 import { ReadinessService } from './health/readiness.service.js';
 import { InternalQuoteController, QuoteController } from './quotes/quote.controller.js';
 import { DeterministicFxProvider, FxProvider } from './quotes/fx-provider.js';
 import { QuoteService } from './quotes/quote.service.js';
 
 @Module({
-  controllers: [HealthController, QuoteController, InternalQuoteController],
+  controllers: [HealthController, MetricsController, QuoteController, InternalQuoteController],
   providers: [
     RequestContextService,
+    MetricsService,
     PrismaService,
     ReadinessService,
     PrincipalService,

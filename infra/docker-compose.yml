@@ -119,7 +119,7 @@ services:
     build:
       context: ..
       dockerfile: services/account-service/Dockerfile
-    image: nova-pay/account-service:0.4.0
+    image: nova-pay/account-service:0.5.0
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -130,6 +130,7 @@ services:
       IDENTITY_ACTIVE_KEY_VERSION: ${IDENTITY_ACTIVE_KEY_VERSION:?Set IDENTITY_ACTIVE_KEY_VERSION in infra/.env}
       IDENTITY_KEK_RING: ${IDENTITY_KEK_RING:?Set IDENTITY_KEK_RING in infra/.env}
       IDENTITY_LOOKUP_HMAC_KEY: ${IDENTITY_LOOKUP_HMAC_KEY:?Set IDENTITY_LOOKUP_HMAC_KEY in infra/.env}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3001"]
     depends_on:
       account-migration:
@@ -146,7 +147,7 @@ services:
     build:
       context: ..
       dockerfile: services/transaction-service/Dockerfile
-    image: nova-pay/transaction-service:0.5.0
+    image: nova-pay/transaction-service:0.6.0
     environment:
       NODE_ENV: production
       PORT: 3002
@@ -158,6 +159,7 @@ services:
       HISTORY_CURSOR_HMAC_KEY: ${HISTORY_CURSOR_HMAC_KEY:?Set HISTORY_CURSOR_HMAC_KEY in infra/.env}
       STALE_PROCESSING_MS: "30000"
       RECONCILIATION_INTERVAL_MS: "30000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3002"]
     depends_on:
       transaction-migration:
@@ -174,13 +176,15 @@ services:
     build:
       context: ..
       dockerfile: services/ledger-service/Dockerfile
-    image: nova-pay/ledger-service:0.4.0
+    image: nova-pay/ledger-service:0.5.0
     environment:
       NODE_ENV: production
       PORT: 3003
       DATABASE_URL: postgresql://ledger_user:${LEDGER_DB_PASSWORD}@postgres:5432/ledger_db
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
       ENABLE_TEST_FUNDING: "false"
+      LEDGER_INVARIANT_INTERVAL_MS: "15000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3003"]
     depends_on:
       ledger-migration:
@@ -197,13 +201,14 @@ services:
     build:
       context: ..
       dockerfile: services/fx-service/Dockerfile
-    image: nova-pay/fx-service:0.3.0
+    image: nova-pay/fx-service:0.4.0
     environment:
       NODE_ENV: production
       PORT: 3004
       DATABASE_URL: postgresql://fx_user:${FX_DB_PASSWORD}@postgres:5432/fx_db
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
       FX_PROVIDER_MODE: normal
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3004"]
     depends_on:
       fx-migration:
@@ -220,7 +225,7 @@ services:
     build:
       context: ..
       dockerfile: services/payroll-service/Dockerfile
-    image: nova-pay/payroll-service:0.3.0
+    image: nova-pay/payroll-service:0.4.0
     environment:
       NODE_ENV: production
       PORT: 3005
@@ -230,6 +235,7 @@ services:
       TRANSACTION_BASE_URL: http://transaction-service:3002
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
       PAYROLL_WORKER_ENABLED: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3005"]
     depends_on:
       payroll-migration:
@@ -249,8 +255,8 @@ services:
 
   payroll-worker:
     <<: *service-defaults
-    image: nova-pay/payroll-service:0.3.0
-    command: ["node", "dist/worker.js"]
+    image: nova-pay/payroll-service:0.4.0
+    command: ["node", "--import", "./dist/observability/register.js", "dist/worker.js"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://payroll_user:${PAYROLL_DB_PASSWORD}@postgres:5432/payroll_db
@@ -259,6 +265,7 @@ services:
       TRANSACTION_BASE_URL: http://transaction-service:3002
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
       PAYROLL_WORKER_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     depends_on:
       payroll-migration:
         condition: service_completed_successfully
@@ -274,12 +281,13 @@ services:
     build:
       context: ..
       dockerfile: services/admin-service/Dockerfile
-    image: nova-pay/admin-service:0.3.0
+    image: nova-pay/admin-service:0.4.0
     environment:
       NODE_ENV: production
       PORT: 3006
       DATABASE_URL: postgresql://admin_user:${ADMIN_DB_PASSWORD}@postgres:5432/admin_db
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3006"]
     depends_on:
       admin-migration:
@@ -314,6 +322,68 @@ services:
       - edge
       - backend
 
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - backend
+
+  grafana:
+    image: grafana/grafana:12.3.0
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - backend
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.68.0
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+    expose:
+      - "4317"
+      - "4318"
+    networks:
+      - backend
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.140.1
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    volumes:
+      - ./otel-collector/config.yml:/etc/otelcol-contrib/config.yml:ro
+    expose:
+      - "4317"
+      - "4318"
+    ports:
+      - "4318:4318"
+    depends_on:
+      - jaeger
+    networks:
+      - backend
+
 networks:
   edge:
   backend:
@@ -321,3 +391,5 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  prometheus-data:
+  grafana-data:

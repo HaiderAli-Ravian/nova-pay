@@ -4,7 +4,7 @@ This document records the decisions that materially affect correctness, reliabil
 
 ## Architecture
 
-NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction is currently `0.5.0`; Account and Ledger are `0.4.0`; FX, Payroll, and Admin are `0.3.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
+NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction is currently `0.6.0`; Account and Ledger are `0.5.0`; FX, Payroll, and Admin are `0.4.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
 
 All external traffic enters through Nginx. Immediate request/response operations use synchronous HTTP. BullMQ and Redis are limited to asynchronous payroll processing. The design intentionally excludes Kafka, RabbitMQ, a general event bus, Kubernetes, GraphQL, and saga frameworks because they are not required to protect the central financial invariant and would add operational paths that cannot be justified within the assessment.
 
@@ -106,9 +106,9 @@ Ledger entries remain the primary financial evidence. Audit metadata never copie
 
 ## Observability
 
-Services use NestJS Logger with request context, Prometheus/Grafana metrics, and OpenTelemetry traces exported through a Collector to Jaeger. Relevant logs contain UTC timestamp, request ID, user ID when known, and transaction ID when known. Identifiers are not Prometheus labels.
+Services use NestJS Logger with request context, Prometheus/Grafana metrics, and OpenTelemetry traces exported through a Collector to Jaeger. Relevant logs contain UTC timestamp, request ID, trace ID when tracing is enabled, user ID when known, and transaction ID when known. Identifiers are not Prometheus labels.
 
-Required dashboards cover transaction throughput, failed transaction rate, and HTTP p95/p99 latency. Ledger exposes an invariant-violation gauge, and any value above zero fires an immediate critical alert. Demonstrations include a complete transfer trace and the explicit FX-provider quote-acquisition failure trace.
+The provisioned dashboard covers successful and failed Transaction request rates, HTTP p95/p99 latency, and the Ledger invariant gauge. Any invariant value above zero fires an immediate critical alert. The runtime demonstration procedure covers a complete transfer trace and the explicit FX-provider quote-acquisition failure trace; captured Docker evidence remains a release-verification item.
 
 ## Time-pressure tradeoffs
 

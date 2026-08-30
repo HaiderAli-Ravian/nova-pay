@@ -16,6 +16,8 @@ import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
+import { MetricsController } from './observability/metrics.controller.js';
+import { MetricsService } from './observability/metrics.service.js';
 import { ReadinessService } from './health/readiness.service.js';
 import { RedisReadinessIndicator } from './health/redis-readiness.indicator.js';
 import { InternalPayrollController, PayrollController } from './payroll/payroll.controller.js';
@@ -28,9 +30,10 @@ import { PayrollWorkerService } from './queue/payroll-worker.service.js';
 import { RedisConnectionService } from './queue/redis-connection.service.js';
 
 @Module({
-  controllers: [HealthController, PayrollController, InternalPayrollController],
+  controllers: [HealthController, MetricsController, PayrollController, InternalPayrollController],
   providers: [
     RequestContextService,
+    MetricsService,
     PrismaService,
     ReadinessService,
     RedisReadinessIndicator,

@@ -8,15 +8,20 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
+import { trace } from '@opentelemetry/api';
 import { tap } from 'rxjs/operators';
 import { RequestContextService } from './request-context.service.js';
+import { MetricsService } from '../observability/metrics.service.js';
 import { redactSensitive } from './redaction.js';
 
 @Injectable()
 export class RequestLoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HttpRequest');
 
-  constructor(private readonly requestContext: RequestContextService) {}
+  constructor(
+    private readonly requestContext: RequestContextService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   intercept(
     executionContext: ExecutionContext,
@@ -28,7 +33,9 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     const route = request.route?.path
       ? `${request.baseUrl}${String(request.route.path)}`
       : request.path;
+    const metricRoute = request.route?.path ? route : 'unmatched';
     const startedAt = process.hrtime.bigint();
+    const traceId = trace.getActiveSpan()?.spanContext().traceId;
 
     this.logger.log(redactSensitive({
       event: 'http.request.started',
@@ -41,19 +48,36 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         complete: () => {
+          const durationMs = elapsedMilliseconds(startedAt);
+          this.metrics.observeHttp({
+            method: request.method,
+            route: metricRoute,
+            statusCode: response.statusCode,
+            durationSeconds: durationMs / 1_000,
+          });
           this.logger.log(redactSensitive({
             event: 'http.request.completed',
             requestId,
             method: request.method,
             route,
             statusCode: response.statusCode,
-            durationMs: elapsedMilliseconds(startedAt),
+            durationMs,
+            userId: this.requestContext.get()?.userId,
+            transactionId: this.requestContext.get()?.transactionId,
+            traceId,
             timestamp: new Date().toISOString(),
           }));
         },
         error: (error: unknown) => {
           const statusCode =
             error instanceof HttpException ? error.getStatus() : 500;
+          const durationMs = elapsedMilliseconds(startedAt);
+          this.metrics.observeHttp({
+            method: request.method,
+            route: metricRoute,
+            statusCode,
+            durationSeconds: durationMs / 1_000,
+          });
 
           this.logger.error(redactSensitive({
             event: 'http.request.failed',
@@ -61,7 +85,10 @@ export class RequestLoggingInterceptor implements NestInterceptor {
             method: request.method,
             route,
             statusCode,
-            durationMs: elapsedMilliseconds(startedAt),
+            durationMs,
+            userId: this.requestContext.get()?.userId,
+            transactionId: this.requestContext.get()?.transactionId,
+            traceId,
             timestamp: new Date().toISOString(),
           }));
         },

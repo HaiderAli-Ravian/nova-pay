@@ -60,6 +60,7 @@ export class TransferService {
     validateCommand(command);
     const requestHash = canonicalTransferHash(command);
     const claim = await this.claim(clientId, idempotencyKey, requestHash, command);
+    this.requestContext.setTransactionId(claim.transfer.id);
 
     if (!claim.created) {
       return this.handleExisting(claim.transfer, requestHash);
@@ -83,6 +84,7 @@ export class TransferService {
       requestHash,
       command,
     );
+    this.requestContext.setTransactionId(claim.transfer.id);
     if (!claim.created) {
       return this.handleExisting(claim.transfer, requestHash);
     }
@@ -90,6 +92,7 @@ export class TransferService {
   }
 
   async getForPrincipal(clientId: string, transferId: string): Promise<TransferResponseDto> {
+    this.requestContext.setTransactionId(transferId);
     const transfer = await this.findTransfer(transferId);
     if (transfer.clientId !== clientId) {
       const recipient = await this.readWallet(transfer.recipientWalletId);
@@ -104,6 +107,7 @@ export class TransferService {
   }
 
   async getInternal(transferId: string): Promise<TransferResponseDto> {
+    this.requestContext.setTransactionId(transferId);
     return toResponse(await this.findTransfer(transferId));
   }
 
@@ -165,6 +169,7 @@ export class TransferService {
   }
 
   async reconcile(transferId: string, force = false): Promise<TransferExecutionResult> {
+    this.requestContext.setTransactionId(transferId);
     const transfer = await this.findTransfer(transferId);
     if (transfer.status === 'PENDING' && transfer.type === 'INTERNATIONAL') {
       const withIdempotency = await this.prisma.db.transfer.findUniqueOrThrow({

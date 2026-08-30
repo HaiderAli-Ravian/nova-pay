@@ -17,6 +17,8 @@ import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
+import { MetricsController } from './observability/metrics.controller.js';
+import { MetricsService } from './observability/metrics.service.js';
 import { ReadinessService } from './health/readiness.service.js';
 import { HistoryProjectionService } from './history/history-projection.service.js';
 import { ReconciliationService } from './transfers/reconciliation.service.js';
@@ -27,9 +29,10 @@ import {
 import { TransferService } from './transfers/transfer.service.js';
 
 @Module({
-  controllers: [HealthController, TransferController, InternalTransferController],
+  controllers: [HealthController, MetricsController, TransferController, InternalTransferController],
   providers: [
     RequestContextService,
+    MetricsService,
     PrismaService,
     ReadinessService,
     PrincipalService,

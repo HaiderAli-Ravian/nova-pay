@@ -28,6 +28,7 @@ import {
 } from './dto/ledger-responses.dto.js';
 import { LedgerAccountService } from './ledger-account.service.js';
 import { LedgerMetricsService } from './ledger-metrics.service.js';
+import { LedgerInvariantService } from './ledger-invariant.service.js';
 import { PostingService } from './posting.service.js';
 
 @ApiTags('internal-ledger')
@@ -39,6 +40,7 @@ export class LedgerController {
     private readonly accounts: LedgerAccountService,
     private readonly postings: PostingService,
     private readonly metrics: LedgerMetricsService,
+    private readonly invariants: LedgerInvariantService,
   ) {}
 
   @Post('accounts')
@@ -91,5 +93,11 @@ export class LedgerController {
   @Get('metrics')
   metricsSnapshot() {
     return this.metrics.snapshot();
+  }
+
+  @Post('invariants/verify')
+  @ApiOperation({ summary: 'Verify the persisted double-entry invariant' })
+  verifyInvariants() {
+    return this.invariants.verify();
   }
 }

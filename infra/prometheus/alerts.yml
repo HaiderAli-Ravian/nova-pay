@@ -1,0 +1,11 @@
+groups:
+  - name: novapay-financial-integrity
+    rules:
+      - alert: LedgerInvariantViolation
+        expr: novapay_ledger_invariant_violations > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: Ledger double-entry invariant violation detected
+          description: The latest Ledger verification found one or more unbalanced transaction/currency groups.

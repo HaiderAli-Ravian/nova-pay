@@ -1,9 +1,14 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import { context, propagation } from '@opentelemetry/api';
 import { RedisConnectionService } from './redis-connection.service.js';
 
 export const PAYROLL_QUEUE = 'novapay-payroll';
-export interface PayrollQueueData { jobId: string }
+export interface PayrollQueueData {
+  jobId: string;
+  traceparent?: string;
+  tracestate?: string;
+}
 
 @Injectable()
 export class PayrollQueueService implements OnModuleDestroy {
@@ -19,9 +24,15 @@ export class PayrollQueueService implements OnModuleDestroy {
       if (!['completed', 'failed'].includes(state)) return;
       await existing.remove();
     }
+    const traceCarrier: Record<string, string> = {};
+    propagation.inject(context.active(), traceCarrier);
     await queue.add(
       'process-payroll',
-      { jobId },
+      {
+        jobId,
+        ...(traceCarrier.traceparent ? { traceparent: traceCarrier.traceparent } : {}),
+        ...(traceCarrier.tracestate ? { tracestate: traceCarrier.tracestate } : {}),
+      },
       {
         jobId,
         attempts: 5,

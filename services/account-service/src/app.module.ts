@@ -14,6 +14,8 @@ import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
+import { MetricsController } from './observability/metrics.controller.js';
+import { MetricsService } from './observability/metrics.service.js';
 import { ReadinessService } from './health/readiness.service.js';
 import { IdentityCryptoService } from './identity/identity-crypto.service.js';
 import { IdentityController, InternalIdentityController } from './identity/identity.controller.js';
@@ -28,6 +30,7 @@ import { WalletService } from './wallets/wallet.service.js';
 @Module({
   controllers: [
     HealthController,
+    MetricsController,
     WalletController,
     InternalWalletController,
     IdentityController,
@@ -35,6 +38,7 @@ import { WalletService } from './wallets/wallet.service.js';
   ],
   providers: [
     RequestContextService,
+    MetricsService,
     PrismaService,
     ReadinessService,
     PrincipalService,

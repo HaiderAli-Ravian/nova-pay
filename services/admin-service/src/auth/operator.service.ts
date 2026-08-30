@@ -1,10 +1,13 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
+import { RequestContextService } from '../common/request-context.service.js';
 
 const OPERATOR_PATTERN = /^operator:([A-Za-z0-9][A-Za-z0-9._-]{0,79})$/;
 
 @Injectable()
 export class OperatorService {
+  constructor(private readonly requestContext: RequestContextService) {}
+
   fromRequest(request: Request): string {
     const authorization = request.header('authorization');
     if (!authorization?.startsWith('Bearer ')) {
@@ -20,6 +23,8 @@ export class OperatorService {
         message: 'A distinct operator principal is required.',
       });
     }
-    return match[1] as string;
+    const operatorId = match[1] as string;
+    this.requestContext.setUserId('operator:' + operatorId);
+    return operatorId;
   }
 }

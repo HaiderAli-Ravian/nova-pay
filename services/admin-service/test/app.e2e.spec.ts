@@ -118,6 +118,13 @@ describe('admin-service bootstrap', () => {
     });
   });
 
+  it('exposes low-cardinality Prometheus metrics', async () => {
+    const response = await request(app.getHttpServer()).get('/metrics').expect(200);
+    expect(response.text).toContain('novapay_http_requests_total');
+    expect(response.text).toContain('route="/health/live"');
+    expect(response.text).toContain('service="admin-service"');
+  });
+
   it('exposes service metadata and health paths through Swagger', async () => {
     const response = await request(app.getHttpServer())
       .get('/docs-json')
@@ -125,7 +132,7 @@ describe('admin-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Admin Service',
-      version: '0.3.0',
+      version: '0.4.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');

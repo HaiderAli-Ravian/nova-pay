@@ -17,7 +17,9 @@ currency legs. Payroll adds durable bulk-job submission, deterministic BullMQ
 work, employer-scoped serialization, exact item checkpoints, and restart-safe
 Transaction retries. Account protects restricted identity fields with envelope
 encryption, while Admin provides immutable, verifiable audit streams.
-Observability backends remain planned work.
+All services expose low-cardinality Prometheus metrics and OpenTelemetry traces;
+the local stack includes Prometheus, Grafana, an OpenTelemetry Collector, and
+Jaeger, plus an immediate critical Ledger invariant alert.
 
 ## Architecture
 
@@ -75,8 +77,9 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml up --build --wa
 
 The database initializer creates six databases and six restricted login roles.
 One-shot migration containers must finish successfully before application
-containers start. Only Nginx publishes a host port; PostgreSQL, Redis, and service
-ports remain on the Compose network.
+containers start. PostgreSQL, Redis, and application service ports remain on the
+Compose network; Nginx and the observability interfaces publish documented host
+ports.
 
 Useful gateway URLs:
 
@@ -89,6 +92,9 @@ Useful gateway URLs:
 | FX health / Swagger | `http://localhost:8080/services/fx/health/ready`, `http://localhost:8080/services/fx/docs` |
 | Payroll health / Swagger | `http://localhost:8080/services/payroll/health/ready`, `http://localhost:8080/services/payroll/docs` |
 | Admin health / Swagger | `http://localhost:8080/services/admin/health/ready`, `http://localhost:8080/services/admin/docs` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` |
+| Jaeger | `http://localhost:16686` |
 
 Stop the stack without deleting persisted data:
 
@@ -108,7 +114,10 @@ npm run start:dev --workspace @novapay/account-service
 Copy that service's `.env.example` to an untracked `.env` or export its values.
 Every service requires its own `DATABASE_URL`; Payroll additionally requires a
 `REDIS_URL` (a password is optional for local Redis), and Transaction requires a
-32-byte base64 `HISTORY_CURSOR_HMAC_KEY` (`openssl rand -base64 32`). A valid process stays live when a dependency is down,
+32-byte base64 `HISTORY_CURSOR_HMAC_KEY` (`openssl rand -base64 32`). When running
+the Collector and services outside Compose, set
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`; tracing is disabled when the
+variable is omitted. A valid process stays live when a dependency is down,
 but `/health/ready` returns `503 SERVICE_NOT_READY` until dependencies recover.
 
 The default service ports are:
@@ -132,7 +141,7 @@ Use the repository root as the Docker build context:
 ```bash
 docker build \
   -f services/account-service/Dockerfile \
-  -t nova-pay/account-service:0.3.0 \
+  -t nova-pay/account-service:0.5.0 \
   .
 ```
 
@@ -279,6 +288,40 @@ sanitized audit events. Hash verification detects modification, deletion, or
 reordering but does not claim protection against a privileged attacker replacing
 all storage and external backups.
 
+## Observability
+
+Each service exposes `/metrics` directly on its internal service port. Prometheus
+scrapes HTTP request totals and duration histograms with only bounded `service`,
+`method`, route-template, and status-class labels. The supplied Grafana dashboard
+shows successful and failed Transaction request rates, API p95/p99 latency, and
+the current Ledger invariant violation count. Request, user, wallet, transaction,
+and quote identifiers are never metric labels.
+
+Ledger verifies persisted double-entry groups at startup and every 15 seconds by
+default (`LEDGER_INVARIANT_INTERVAL_MS`). It stores each check, publishes
+`novapay_ledger_invariant_violations`, and Prometheus fires the critical
+`LedgerInvariantViolation` alert immediately when the value is above zero.
+
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, Node.js auto-instrumentation
+captures inbound HTTP, outbound HTTP, PostgreSQL, Redis, and BullMQ-related work.
+Payroll propagates W3C trace context through job data, and the FX provider call has
+an explicit `fx.provider.rate` span. Relevant JSON logs include UTC timestamp,
+request ID, trace ID, user ID when known, and transaction ID when known; payloads,
+credentials, encryption keys, and decrypted identity fields are excluded.
+
+To verify the stack after Compose starts:
+
+1. Run a transfer, then select `transaction-service` in Jaeger and inspect its
+   downstream HTTP/database spans.
+2. Configure the deterministic FX provider failure control, request a quote, and
+   confirm the `fx.provider.rate` span ends in error without a Ledger settlement.
+3. Open the provisioned `NovaPay Overview` Grafana dashboard and confirm request
+   rate and latency panels populate.
+4. Run `POST /internal/ledger/invariants/verify` with the internal service token;
+   a healthy database reports zero violations. Exercise the nonzero alert path
+   only with the isolated integration-test fixture, never by corrupting a
+   development database.
+
 ## Persistence boundaries
 
 - `account_db` owns users and wallet metadata, never balances.
@@ -292,7 +335,8 @@ Cross-service identifiers are UUID scalars without cross-database foreign keys.
 Money uses PostgreSQL `NUMERIC(28,8)` and FX rates use `NUMERIC(28,12)`; the
 application clients expose both as Prisma `Decimal` values.
 
-## Documentation still to complete with implementation
+## Remaining release verification
 
-- Observability and alerting
-- Time-pressure tradeoffs and production improvements
+- Capture Compose-backed success and provider-failure trace evidence.
+- Exercise and record the Prometheus alert lifecycle in an isolated environment.
+- Complete clean-checkout and Docker smoke verification.

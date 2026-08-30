@@ -12,21 +12,26 @@ import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
+import { MetricsController } from './observability/metrics.controller.js';
+import { MetricsService } from './observability/metrics.service.js';
 import { ReadinessService } from './health/readiness.service.js';
 import { LedgerController } from './ledger/ledger.controller.js';
 import { LedgerAccountService } from './ledger/ledger-account.service.js';
 import { LedgerMetricsService } from './ledger/ledger-metrics.service.js';
+import { LedgerInvariantService } from './ledger/ledger-invariant.service.js';
 import { PostingService } from './ledger/posting.service.js';
 
 @Module({
-  controllers: [HealthController, LedgerController],
+  controllers: [HealthController, MetricsController, LedgerController],
   providers: [
     RequestContextService,
+    MetricsService,
     PrismaService,
     ReadinessService,
     InternalServiceGuard,
     LedgerAccountService,
     LedgerMetricsService,
+    LedgerInvariantService,
     PostingService,
     {
       provide: APP_FILTER,

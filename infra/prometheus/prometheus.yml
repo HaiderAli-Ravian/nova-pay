@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: novapay-services
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - account-service:3001
+          - transaction-service:3002
+          - ledger-service:3003
+          - fx-service:3004
+          - payroll-service:3005
+          - admin-service:3006

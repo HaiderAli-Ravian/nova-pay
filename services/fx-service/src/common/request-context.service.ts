@@ -22,5 +22,14 @@ export class RequestContextService {
   getRequestId(): string {
     return this.get()?.requestId ?? 'unbound';
   }
-}
 
+  setUserId(userId: string): void {
+    const context = this.get();
+    if (context) context.userId = userId;
+  }
+
+  setTransactionId(transactionId: string): void {
+    const context = this.get();
+    if (context) context.transactionId = transactionId;
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Completed transaction requests / second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(novapay_http_requests_total{service=\"transaction-service\",route=~\"/transfers.*\",status_class=\"2xx\"}[5m]))",
+          "legendFormat": "successful requests/s",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Failed transaction requests / second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(novapay_http_requests_total{service=\"transaction-service\",route=~\"/transfers.*\",status_class=~\"4xx|5xx\"}[5m]))",
+          "legendFormat": "failed requests/s",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "id": 3,
+      "title": "API latency p95 / p99",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(novapay_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, service) (rate(novapay_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} p99",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 8 }
+    },
+    {
+      "id": 4,
+      "title": "Ledger invariant violations",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "max(novapay_ledger_invariant_violations)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 41,
+  "tags": ["novapay", "financial-integrity"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timezone": "browser",
+  "title": "NovaPay Overview",
+  "uid": "novapay-overview",
+  "version": 1
+}

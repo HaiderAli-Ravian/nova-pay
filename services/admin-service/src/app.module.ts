@@ -15,12 +15,15 @@ import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
+import { MetricsController } from './observability/metrics.controller.js';
+import { MetricsService } from './observability/metrics.service.js';
 import { ReadinessService } from './health/readiness.service.js';
 
 @Module({
-  controllers: [HealthController, AdminAuditController, InternalAuditController],
+  controllers: [HealthController, MetricsController, AdminAuditController, InternalAuditController],
   providers: [
     RequestContextService,
+    MetricsService,
     PrismaService,
     ReadinessService,
     OperatorService,

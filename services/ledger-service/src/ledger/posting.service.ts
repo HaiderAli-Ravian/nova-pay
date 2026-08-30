@@ -9,6 +9,7 @@ import {
 import { createHash } from 'node:crypto';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { RequestContextService } from '../common/request-context.service.js';
 import {
   CreatePostingDto,
   FundWalletDto,
@@ -57,9 +58,11 @@ export class PostingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: LedgerMetricsService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   async post(command: CreatePostingDto, options: PostOptions = {}) {
+    this.requestContext.setTransactionId(command.externalReference);
     validateFxShape(command);
     const commandHash = hashValue(normalizeCommand(command));
     const prior = await this.findIdempotent(command.externalReference, commandHash);
@@ -143,6 +146,7 @@ export class PostingService {
   }
 
   async reverse(transactionId: string, command: ReversePostingDto) {
+    this.requestContext.setTransactionId(transactionId);
     const original = await this.prisma.db.ledgerTransaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -206,6 +210,7 @@ export class PostingService {
   }
 
   async fund(command: FundWalletDto) {
+    this.requestContext.setTransactionId(command.externalReference);
     if (process.env.NODE_ENV === 'production' || process.env.ENABLE_TEST_FUNDING !== 'true') {
       throw new ForbiddenException({
         code: 'TEST_FUNDING_DISABLED',
