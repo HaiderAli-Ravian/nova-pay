@@ -15,7 +15,9 @@ and cursor-based wallet history. FX quotes and international transfers add
 database-timed expiry, single-use quote consumption, and independently balanced
 currency legs. Payroll adds durable bulk-job submission, deterministic BullMQ
 work, employer-scoped serialization, exact item checkpoints, and restart-safe
-Transaction retries. Observability backends remain planned work.
+Transaction retries. Account protects restricted identity fields with envelope
+encryption, while Admin provides immutable, verifiable audit streams.
+Observability backends remain planned work.
 
 ## Architecture
 
@@ -241,6 +243,27 @@ the original transfer rather than paying twice. If Redis is unavailable during
 submission, the durable job remains recoverable and the API returns
 `503 QUEUE_UNAVAILABLE`.
 
+## Encrypted identity and audit integrity
+
+`PUT /users/me/identity` accepts only legal name, email, phone, postal address,
+and government/tax identifier fields. Account canonicalizes the payload,
+generates a random per-record 256-bit DEK, encrypts it with AES-256-GCM, and
+wraps that DEK with the configured versioned KEK. Associated data binds both
+layers to the user ID and schema version. PostgreSQL stores only ciphertext,
+96-bit nonces, authentication tags, the wrapped DEK, key version, and a separate
+HMAC-SHA-256 email lookup digest. `GET /users/me/identity` derives ownership only
+from the bearer principal.
+
+Admin appends service and operator events through a locked per-stream head.
+Each SHA-256 record hash covers a domain tag, previous hash, sequence, occurrence
+time, canonical identifiers, and sanitized metadata. Audit records reject
+updates, deletes, and truncation at the database layer. Operators use a distinct
+`operator:<id>` bearer scope and can verify a stream with
+`POST /admin/audit/verify`; reads and verification actions create deterministic,
+sanitized audit events. Hash verification detects modification, deletion, or
+reordering but does not claim protection against a privileged attacker replacing
+all storage and external backups.
+
 ## Persistence boundaries
 
 - `account_db` owns users and wallet metadata, never balances.
@@ -256,6 +279,5 @@ application clients expose both as Prisma `Decimal` values.
 
 ## Documentation still to complete with implementation
 
-- Audit hash-chain verification
 - Observability and alerting
 - Time-pressure tradeoffs and production improvements

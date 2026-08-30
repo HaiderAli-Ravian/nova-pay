@@ -10,6 +10,7 @@ import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { RequestContextService } from './request-context.service.js';
+import { redactSensitive } from './redaction.js';
 
 @Injectable()
 export class RequestLoggingInterceptor implements NestInterceptor {
@@ -29,18 +30,18 @@ export class RequestLoggingInterceptor implements NestInterceptor {
       : request.path;
     const startedAt = process.hrtime.bigint();
 
-    this.logger.log({
+    this.logger.log(redactSensitive({
       event: 'http.request.started',
       requestId,
       method: request.method,
       route,
       timestamp: new Date().toISOString(),
-    });
+    }));
 
     return next.handle().pipe(
       tap({
         complete: () => {
-          this.logger.log({
+          this.logger.log(redactSensitive({
             event: 'http.request.completed',
             requestId,
             method: request.method,
@@ -48,13 +49,13 @@ export class RequestLoggingInterceptor implements NestInterceptor {
             statusCode: response.statusCode,
             durationMs: elapsedMilliseconds(startedAt),
             timestamp: new Date().toISOString(),
-          });
+          }));
         },
         error: (error: unknown) => {
           const statusCode =
             error instanceof HttpException ? error.getStatus() : 500;
 
-          this.logger.error({
+          this.logger.error(redactSensitive({
             event: 'http.request.failed',
             requestId,
             method: request.method,
@@ -62,7 +63,7 @@ export class RequestLoggingInterceptor implements NestInterceptor {
             statusCode,
             durationMs: elapsedMilliseconds(startedAt),
             timestamp: new Date().toISOString(),
-          });
+          }));
         },
       }),
     );

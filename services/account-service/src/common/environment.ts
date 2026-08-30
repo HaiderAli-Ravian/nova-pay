@@ -58,10 +58,10 @@ export function requireUrlEnvironmentVariable(
   return value;
 }
 
-export function requireSecretEnvironmentVariable(name: string): string {
+export function requireSecretEnvironmentVariable(name: string, minimumLength = 24): string {
   const value = process.env[name];
-  if (!value || value.length < 24) {
-    throw new Error(`${name} must contain at least 24 characters.`);
+  if (!value || value.length < minimumLength) {
+    throw new Error(`${name} must contain at least ${minimumLength} characters.`);
   }
   return value;
 }

@@ -125,10 +125,13 @@ describe('admin-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Admin Service',
-      version: '0.2.0',
+      version: '0.3.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');
+    expect(response.body.paths).toHaveProperty('/admin/audit/verify');
+    expect(response.body.paths).toHaveProperty('/admin/audit/streams/{streamKey}/records');
+    expect(response.body.paths).toHaveProperty('/internal/audit-events');
   });
 
   it('places the request ID in structured request logs', async () => {

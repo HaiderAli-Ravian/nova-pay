@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
+import { IdentityCryptoService } from '../identity/identity-crypto.service.js';
+import { IdentityService } from '../identity/identity.service.js';
+import type { AuditClient } from '../audit/audit.client.js';
 import { LedgerClient, type LedgerBalance } from './ledger.client.js';
 import { WalletService } from './wallet.service.js';
 
@@ -15,9 +18,23 @@ describeWithDatabase('WalletService database integration', () => {
 
   beforeAll(() => {
     process.env.DATABASE_URL = process.env.ACCOUNT_TEST_DATABASE_URL;
+    process.env.IDENTITY_ACTIVE_KEY_VERSION = 'v1';
+    process.env.IDENTITY_KEK_RING = JSON.stringify({ v1: Buffer.alloc(32, 1).toString('base64') });
+    process.env.IDENTITY_LOOKUP_HMAC_KEY = Buffer.alloc(32, 2).toString('base64');
     prisma = new PrismaService();
     ledger = new FakeLedgerClient();
-    service = new WalletService(prisma, ledger as unknown as LedgerClient);
+    const audit = new FakeAuditClient();
+    const identities = new IdentityService(
+      prisma,
+      new IdentityCryptoService(),
+      audit as unknown as AuditClient,
+    );
+    service = new WalletService(
+      prisma,
+      ledger as unknown as LedgerClient,
+      identities,
+      audit as unknown as AuditClient,
+    );
   });
 
   afterAll(async () => {
@@ -113,4 +130,9 @@ class FakeLedgerClient {
     const current = this.balances.get(walletId)!;
     this.balances.set(walletId, { ...current, available, currency, version });
   }
+}
+
+class FakeAuditClient {
+  async identityUpdated(): Promise<void> {}
+  async walletActivated(): Promise<void> {}
 }

@@ -4,7 +4,7 @@ This document records the decisions that materially affect correctness, reliabil
 
 ## Architecture
 
-NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction and Ledger are currently `0.4.0`; Account, FX, and Payroll are `0.3.0`; Admin is `0.2.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
+NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Account, Transaction, and Ledger are currently `0.4.0`; FX, Payroll, and Admin are `0.3.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
 
 All external traffic enters through Nginx. Immediate request/response operations use synchronous HTTP. BullMQ and Redis are limited to asynchronous payroll processing. The design intentionally excludes Kafka, RabbitMQ, a general event bus, Kubernetes, GraphQL, and saga frameworks because they are not required to protect the central financial invariant and would add operational paths that cannot be justified within the assessment.
 

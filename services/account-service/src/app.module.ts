@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrincipalService } from './auth/principal.service.js';
+import { AuditClient } from './audit/audit.client.js';
 import { HttpExceptionFilter } from './common/http-exception.filter.js';
 import { InternalServiceGuard } from './common/internal-service.guard.js';
 import { RequestContextMiddleware } from './common/request-context.middleware.js';
@@ -14,6 +15,9 @@ import { RequestLoggingInterceptor } from './common/request-logging.interceptor.
 import { PrismaService } from './database/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
 import { ReadinessService } from './health/readiness.service.js';
+import { IdentityCryptoService } from './identity/identity-crypto.service.js';
+import { IdentityController, InternalIdentityController } from './identity/identity.controller.js';
+import { IdentityService } from './identity/identity.service.js';
 import { LedgerClient } from './wallets/ledger.client.js';
 import {
   InternalWalletController,
@@ -22,7 +26,13 @@ import {
 import { WalletService } from './wallets/wallet.service.js';
 
 @Module({
-  controllers: [HealthController, WalletController, InternalWalletController],
+  controllers: [
+    HealthController,
+    WalletController,
+    InternalWalletController,
+    IdentityController,
+    InternalIdentityController,
+  ],
   providers: [
     RequestContextService,
     PrismaService,
@@ -30,6 +40,9 @@ import { WalletService } from './wallets/wallet.service.js';
     PrincipalService,
     InternalServiceGuard,
     LedgerClient,
+    AuditClient,
+    IdentityCryptoService,
+    IdentityService,
     WalletService,
     {
       provide: APP_FILTER,

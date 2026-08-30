@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../database/prisma.service.js';
+import { IdentityService } from '../identity/identity.service.js';
+import { AuditClient } from '../audit/audit.client.js';
 import { CreateWalletDto } from './dto/create-wallet.dto.js';
 import { WalletResponseDto } from './dto/wallet-response.dto.js';
 import { LedgerClient } from './ledger.client.js';
@@ -14,6 +16,8 @@ export class WalletService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerClient,
+    private readonly identities: IdentityService,
+    private readonly audit: AuditClient,
   ) {}
 
   async create(
@@ -23,7 +27,7 @@ export class WalletService {
   ): Promise<WalletResponseDto> {
     validateIdempotencyKey(idempotencyKey);
     const requestHash = hashCommand(command);
-    const user = await this.ensureUser(externalRef);
+    const user = await this.identities.ensureUser(externalRef);
 
     const existingRecord = await this.prisma.db.walletIdempotencyRecord.findUnique({
       where: { userId_key: { userId: user.id, key: idempotencyKey } },
@@ -87,15 +91,18 @@ export class WalletService {
     }
 
     const provisioned = await this.ledger.provision(wallet.id, wallet.currency);
-    const active = await this.prisma.db.wallet.update({
-      where: { id: wallet.id },
-      data: { ledgerAccountId: provisioned.ledgerAccountId, status: 'ACTIVE' },
-    });
+    const active = wallet.status === 'ACTIVE' && wallet.ledgerAccountId === provisioned.ledgerAccountId
+      ? wallet
+      : await this.prisma.db.wallet.update({
+          where: { id: wallet.id },
+          data: { ledgerAccountId: provisioned.ledgerAccountId, status: 'ACTIVE' },
+        });
+    await this.audit.walletActivated(active.id, externalRef, active.currency, active.updatedAt);
     return toWallet(active, provisioned);
   }
 
   async list(externalRef: string): Promise<WalletResponseDto[]> {
-    const user = await this.ensureUser(externalRef);
+    const user = await this.identities.ensureUser(externalRef);
     const wallets = await this.prisma.db.wallet.findMany({
       where: { userId: user.id },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -108,7 +115,7 @@ export class WalletService {
   }
 
   async balance(externalRef: string, walletId: string) {
-    const user = await this.ensureUser(externalRef);
+    const user = await this.identities.ensureUser(externalRef);
     const wallet = await this.prisma.db.wallet.findFirst({
       where: { id: walletId, userId: user.id },
     });
@@ -149,24 +156,6 @@ export class WalletService {
     return toWallet(active, provisioned);
   }
 
-  private ensureUser(externalRef: string) {
-    const empty = Buffer.alloc(0);
-    return this.prisma.db.user.upsert({
-      where: { externalRef },
-      update: {},
-      create: {
-        externalRef,
-        identityCiphertext: empty,
-        identityIv: empty,
-        identityAuthTag: empty,
-        encryptedDek: empty,
-        dekIv: empty,
-        dekAuthTag: empty,
-        keyVersion: 'external-principal-v1',
-        status: 'ACTIVE',
-      },
-    });
-  }
 }
 
 function hashCommand(command: CreateWalletDto): string {

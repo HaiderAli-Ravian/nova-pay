@@ -119,13 +119,17 @@ services:
     build:
       context: ..
       dockerfile: services/account-service/Dockerfile
-    image: nova-pay/account-service:0.3.0
+    image: nova-pay/account-service:0.4.0
     environment:
       NODE_ENV: production
       PORT: 3001
       DATABASE_URL: postgresql://account_user:${ACCOUNT_DB_PASSWORD}@postgres:5432/account_db
       LEDGER_BASE_URL: http://ledger-service:3003
+      ADMIN_BASE_URL: http://admin-service:3006
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      IDENTITY_ACTIVE_KEY_VERSION: ${IDENTITY_ACTIVE_KEY_VERSION:?Set IDENTITY_ACTIVE_KEY_VERSION in infra/.env}
+      IDENTITY_KEK_RING: ${IDENTITY_KEK_RING:?Set IDENTITY_KEK_RING in infra/.env}
+      IDENTITY_LOOKUP_HMAC_KEY: ${IDENTITY_LOOKUP_HMAC_KEY:?Set IDENTITY_LOOKUP_HMAC_KEY in infra/.env}
     expose: ["3001"]
     depends_on:
       account-migration:
@@ -269,11 +273,12 @@ services:
     build:
       context: ..
       dockerfile: services/admin-service/Dockerfile
-    image: nova-pay/admin-service:0.2.0
+    image: nova-pay/admin-service:0.3.0
     environment:
       NODE_ENV: production
       PORT: 3006
       DATABASE_URL: postgresql://admin_user:${ADMIN_DB_PASSWORD}@postgres:5432/admin_db
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
     expose: ["3006"]
     depends_on:
       admin-migration:

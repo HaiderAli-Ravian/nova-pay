@@ -126,12 +126,14 @@ describe('account-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Account Service',
-      version: '0.3.0',
+      version: '0.4.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');
     expect(response.body.paths).toHaveProperty('/wallets');
     expect(response.body.paths).toHaveProperty('/wallets/{walletId}/balance');
+    expect(response.body.paths).toHaveProperty('/users/me/identity');
+    expect(response.body.paths).toHaveProperty('/internal/users/lookup-by-email');
     expect(response.body.paths).toHaveProperty(
       '/internal/wallets/{walletId}/reconcile',
     );

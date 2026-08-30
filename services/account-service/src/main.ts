@@ -15,7 +15,11 @@ async function bootstrap(): Promise<void> {
   const environment = loadEnvironment(SERVICE_METADATA.defaultPort);
   requireUrlEnvironmentVariable('DATABASE_URL', ['postgres:', 'postgresql:']);
   requireUrlEnvironmentVariable('LEDGER_BASE_URL', ['http:', 'https:']);
+  requireUrlEnvironmentVariable('ADMIN_BASE_URL', ['http:', 'https:']);
   requireSecretEnvironmentVariable('INTERNAL_SERVICE_TOKEN');
+  requireSecretEnvironmentVariable('IDENTITY_ACTIVE_KEY_VERSION', 1);
+  requireSecretEnvironmentVariable('IDENTITY_KEK_RING', 20);
+  requireSecretEnvironmentVariable('IDENTITY_LOOKUP_HMAC_KEY', 40);
   const version = readServiceVersion();
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,

@@ -5,7 +5,11 @@ import {
   RequestMethod,
 } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { AdminAuditController, InternalAuditController } from './audit/audit.controller.js';
+import { AuditService } from './audit/audit.service.js';
+import { OperatorService } from './auth/operator.service.js';
 import { HttpExceptionFilter } from './common/http-exception.filter.js';
+import { InternalServiceGuard } from './common/internal-service.guard.js';
 import { RequestContextMiddleware } from './common/request-context.middleware.js';
 import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
@@ -14,11 +18,14 @@ import { HealthController } from './health/health.controller.js';
 import { ReadinessService } from './health/readiness.service.js';
 
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, AdminAuditController, InternalAuditController],
   providers: [
     RequestContextService,
     PrismaService,
     ReadinessService,
+    OperatorService,
+    InternalServiceGuard,
+    AuditService,
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
