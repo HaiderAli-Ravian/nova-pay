@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../database/prisma.service.js';
 import { RequestContextService } from '../common/request-context.service.js';
 import { AccountClient, type WalletValidation } from '../clients/account.client.js';
-import { LedgerClient, type DomesticPostingCommand, type LedgerPosting } from '../clients/ledger.client.js';
+import { FxClient, type ConsumeQuoteCommand, type ConsumedQuote } from '../clients/fx.client.js';
+import { LedgerClient, type PostingCommand, type LedgerPosting } from '../clients/ledger.client.js';
 import { UpstreamHttpError, UpstreamUnavailableError } from '../clients/upstream-error.js';
 import { TransferService } from './transfer.service.js';
 
@@ -14,6 +15,7 @@ describeWithDatabase('TransferService database integration', () => {
   let prisma: PrismaService;
   let account: FakeAccountClient;
   let ledger: FakeLedgerClient;
+  let fx: FakeFxClient;
   let service: TransferService;
 
   beforeAll(() => {
@@ -28,10 +30,12 @@ describeWithDatabase('TransferService database integration', () => {
     await prisma.db.transfer.deleteMany();
     account = new FakeAccountClient();
     ledger = new FakeLedgerClient();
+    fx = new FakeFxClient();
     service = new TransferService(
       prisma,
       account as unknown as AccountClient,
       ledger as unknown as LedgerClient,
+      fx as unknown as FxClient,
       new RequestContextService(),
     );
   });
@@ -255,6 +259,108 @@ describeWithDatabase('TransferService database integration', () => {
       }),
     ).rejects.toThrow(/invalid transfer status transition/);
   });
+
+  it('executes an international transfer with consumed quote terms on Ledger and history', async () => {
+    const setup = walletSetup(account, 'USD', 'EUR');
+    const quoteId = randomUUID();
+    const first = await service.createInternational('alice', randomUUID(), {
+      senderWalletId: setup.senderId,
+      recipientWalletId: setup.recipientId,
+      sourceAmount: '100.00000000',
+      sourceCurrency: 'USD',
+      targetCurrency: 'EUR',
+      quoteId,
+    });
+
+    expect(first).toMatchObject({
+      httpStatus: 201,
+      body: {
+        status: 'COMPLETED',
+        sourceAmount: '100.00000000',
+        targetAmount: '92.00000000',
+        quoteId,
+        lockedRate: '0.920000000000',
+      },
+    });
+    expect(fx.consumeCalls).toBe(1);
+    expect(ledger.lastCommand).toMatchObject({
+      postingType: 'FX_TRANSFER',
+      sourceAmount: '100.00000000',
+      targetAmount: '92.00000000',
+      fxQuoteId: quoteId,
+      lockedFxRate: '0.920000000000',
+    });
+    const history = await prisma.db.transactionHistory.findMany({
+      where: { transferId: first.body.transferId },
+      orderBy: { role: 'asc' },
+    });
+    expect(history.map((row) => [row.currency, row.amount.toFixed(8)])).toEqual(
+      expect.arrayContaining([['USD', '100.00000000'], ['EUR', '92.00000000']]),
+    );
+  });
+
+  it('keeps an unavailable FX preparation pending and resumes with the same transfer', async () => {
+    const setup = walletSetup(account, 'USD', 'EUR');
+    const key = randomUUID();
+    fx.mode = 'unavailable';
+    const command = {
+      senderWalletId: setup.senderId,
+      recipientWalletId: setup.recipientId,
+      sourceAmount: '100.00000000',
+      sourceCurrency: 'USD',
+      targetCurrency: 'EUR',
+      quoteId: randomUUID(),
+    };
+    const first = await service.createInternational('alice', key, command);
+    expect(first).toMatchObject({ httpStatus: 202, body: { status: 'PENDING' } });
+
+    fx.mode = 'normal';
+    const replay = await service.createInternational('alice', key, command);
+    expect(replay).toMatchObject({ httpStatus: 201, body: { status: 'COMPLETED' } });
+    expect(replay.body.transferId).toBe(first.body.transferId);
+  });
+
+  it('does not release a consumed quote after a downstream failure', async () => {
+    const setup = walletSetup(account, 'USD', 'EUR');
+    const quoteId = randomUUID();
+    ledger.mode = 'insufficient-funds';
+    const result = await service.createInternational('alice', randomUUID(), {
+      senderWalletId: setup.senderId,
+      recipientWalletId: setup.recipientId,
+      sourceAmount: '100.00000000',
+      sourceCurrency: 'USD',
+      targetCurrency: 'EUR',
+      quoteId,
+    });
+    expect(result).toMatchObject({
+      httpStatus: 422,
+      body: { status: 'FAILED', failure: { code: 'INSUFFICIENT_FUNDS' } },
+    });
+    expect(fx.consumedBy.get(quoteId)).toBe(result.body.transferId);
+  });
+
+  it('stores and replays a definitive expired quote failure', async () => {
+    const setup = walletSetup(account, 'USD', 'EUR');
+    const key = randomUUID();
+    fx.mode = 'expired';
+    const command = {
+      senderWalletId: setup.senderId,
+      recipientWalletId: setup.recipientId,
+      sourceAmount: '100.00000000',
+      sourceCurrency: 'USD',
+      targetCurrency: 'EUR',
+      quoteId: randomUUID(),
+    };
+    const first = await service.createInternational('alice', key, command);
+    const replay = await service.createInternational('alice', key, command);
+    expect(first).toMatchObject({
+      httpStatus: 409,
+      body: { status: 'FAILED', failure: { code: 'QUOTE_EXPIRED' } },
+    });
+    expect(replay).toEqual(first);
+    expect(fx.consumeCalls).toBe(1);
+    expect(ledger.postCalls).toBe(0);
+  });
 });
 
 class FakeAccountClient {
@@ -281,10 +387,12 @@ class FakeLedgerClient {
   delayMs = 0;
   postCalls = 0;
   byReferenceCalls = 0;
+  lastCommand: PostingCommand | undefined;
   private readonly postings = new Map<string, LedgerPosting>();
 
-  async post(command: DomesticPostingCommand): Promise<LedgerPosting> {
+  async post(command: PostingCommand): Promise<LedgerPosting> {
     this.postCalls += 1;
+    this.lastCommand = command;
     if (this.delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, this.delayMs));
     }
@@ -333,14 +441,54 @@ class FakeLedgerClient {
   }
 }
 
-function walletSetup(account: FakeAccountClient, currency = 'USD') {
+class FakeFxClient {
+  mode: 'normal' | 'unavailable' | 'expired' = 'normal';
+  consumeCalls = 0;
+  readonly consumedBy = new Map<string, string>();
+
+  async consume(quoteId: string, command: ConsumeQuoteCommand): Promise<ConsumedQuote> {
+    this.consumeCalls += 1;
+    if (this.mode === 'unavailable') throw new UpstreamUnavailableError('fx');
+    if (this.mode === 'expired') {
+      throw new UpstreamHttpError('fx', 409, 'QUOTE_EXPIRED', 'The FX quote has expired.');
+    }
+    const prior = this.consumedBy.get(quoteId);
+    if (prior && prior !== command.transferId) {
+      throw new UpstreamHttpError(
+        'fx',
+        409,
+        'QUOTE_ALREADY_USED',
+        'The quote was already consumed by another transfer.',
+      );
+    }
+    this.consumedBy.set(quoteId, command.transferId);
+    const issuedAt = new Date();
+    return {
+      quoteId,
+      sourceCurrency: command.sourceCurrency,
+      targetCurrency: command.targetCurrency,
+      sourceAmount: command.sourceAmount,
+      targetAmount: '92.00000000',
+      rate: '0.920000000000',
+      status: 'CONSUMED',
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: new Date(issuedAt.getTime() + 60_000).toISOString(),
+    };
+  }
+}
+
+function walletSetup(
+  account: FakeAccountClient,
+  senderCurrency = 'USD',
+  recipientCurrency = senderCurrency,
+) {
   const senderId = randomUUID();
   const recipientId = randomUUID();
   account.wallets.set(senderId, {
     walletId: senderId,
     userId: randomUUID(),
     ownerExternalRef: 'alice',
-    currency,
+    currency: senderCurrency,
     status: 'ACTIVE',
     ledgerAccountId: randomUUID(),
   });
@@ -348,7 +496,7 @@ function walletSetup(account: FakeAccountClient, currency = 'USD') {
     walletId: recipientId,
     userId: randomUUID(),
     ownerExternalRef: 'bob',
-    currency,
+    currency: recipientCurrency,
     status: 'ACTIVE',
     ledgerAccountId: randomUUID(),
   });
@@ -359,7 +507,7 @@ function walletSetup(account: FakeAccountClient, currency = 'USD') {
       senderWalletId: senderId,
       recipientWalletId: recipientId,
       amount: '10.00000000',
-      currency,
+      currency: senderCurrency,
     },
   };
 }

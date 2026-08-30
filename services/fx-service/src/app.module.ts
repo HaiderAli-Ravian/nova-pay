@@ -10,15 +10,25 @@ import { RequestContextMiddleware } from './common/request-context.middleware.js
 import { RequestContextService } from './common/request-context.service.js';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor.js';
 import { PrismaService } from './database/prisma.service.js';
+import { PrincipalService } from './auth/principal.service.js';
+import { InternalServiceGuard } from './common/internal-service.guard.js';
 import { HealthController } from './health/health.controller.js';
 import { ReadinessService } from './health/readiness.service.js';
+import { InternalQuoteController, QuoteController } from './quotes/quote.controller.js';
+import { DeterministicFxProvider, FxProvider } from './quotes/fx-provider.js';
+import { QuoteService } from './quotes/quote.service.js';
 
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, QuoteController, InternalQuoteController],
   providers: [
     RequestContextService,
     PrismaService,
     ReadinessService,
+    PrincipalService,
+    InternalServiceGuard,
+    QuoteService,
+    DeterministicFxProvider,
+    { provide: FxProvider, useExisting: DeterministicFxProvider },
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,

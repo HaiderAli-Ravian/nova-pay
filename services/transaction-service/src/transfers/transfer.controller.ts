@@ -35,7 +35,7 @@ import type { Request, Response } from 'express';
 import { PrincipalService } from '../auth/principal.service.js';
 import { ErrorResponseDto } from '../common/dto/error-response.dto.js';
 import { InternalServiceGuard } from '../common/internal-service.guard.js';
-import { CreateTransferDto } from './dto/create-transfer.dto.js';
+import { CreateInternationalTransferDto, CreateTransferDto } from './dto/create-transfer.dto.js';
 import { HistoryPageDto, TransferResponseDto } from './dto/transfer-response.dto.js';
 import { ReconciliationService } from './reconciliation.service.js';
 import { TransferService } from './transfer.service.js';
@@ -68,6 +68,33 @@ export class TransferController {
     @Body() body: CreateTransferDto,
   ): Promise<TransferResponseDto> {
     const result = await this.transfers.createDomestic(
+      this.principal.fromRequest(request),
+      idempotencyKey,
+      body,
+    );
+    response.status(result.httpStatus);
+    return result.body;
+  }
+
+  @Post('transfers/international')
+  @ApiOperation({ summary: 'Create an idempotent international transfer using a locked quote' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiCreatedResponse({ type: TransferResponseDto })
+  @ApiAcceptedResponse({ type: TransferResponseDto })
+  @ApiBadRequestResponse({ type: ErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ErrorResponseDto })
+  @ApiForbiddenResponse({ type: TransferResponseDto })
+  @ApiNotFoundResponse({ type: TransferResponseDto })
+  @ApiConflictResponse({ type: TransferResponseDto })
+  @ApiUnprocessableEntityResponse({ type: TransferResponseDto })
+  @ApiServiceUnavailableResponse({ type: TransferResponseDto })
+  async createInternational(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Headers('idempotency-key') idempotencyKey: string = '',
+    @Body() body: CreateInternationalTransferDto,
+  ): Promise<TransferResponseDto> {
+    const result = await this.transfers.createInternational(
       this.principal.fromRequest(request),
       idempotencyKey,
       body,

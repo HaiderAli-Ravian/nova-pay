@@ -80,6 +80,50 @@ export class PostingService {
         });
       }
 
+      const customerEntries: ResolvedEntry[] = command.entries.map((entry) => {
+        const account = byWallet.get(entry.walletId)!;
+        if (account.currency !== entry.currency || account.status !== 'ACTIVE') {
+          throw new ConflictException({
+            code: 'LEDGER_ACCOUNT_UNAVAILABLE',
+            message: 'A ledger account is unavailable or uses another currency.',
+          });
+        }
+        return {
+          ledgerAccountId: account.id,
+          direction: entry.direction,
+          amount: decimal(entry.amount),
+          currency: entry.currency,
+          fxQuoteId: command.fxQuoteId,
+          lockedFxRate: command.lockedFxRate
+            ? decimal(command.lockedFxRate)
+            : undefined,
+        };
+      });
+      const clearingEntries: ResolvedEntry[] = [];
+      if (command.postingType === 'FX_TRANSFER') {
+        const [sourceClearing, targetClearing] = await Promise.all([
+          this.ensureClearingAccount(command.sourceCurrency),
+          this.ensureClearingAccount(command.targetCurrency),
+        ]);
+        clearingEntries.push(
+          {
+            ledgerAccountId: sourceClearing.id,
+            direction: 'CREDIT',
+            amount: decimal(command.sourceAmount),
+            currency: command.sourceCurrency,
+            fxQuoteId: command.fxQuoteId,
+            lockedFxRate: decimal(command.lockedFxRate!),
+          },
+          {
+            ledgerAccountId: targetClearing.id,
+            direction: 'DEBIT',
+            amount: decimal(command.targetAmount),
+            currency: command.targetCurrency,
+            fxQuoteId: command.fxQuoteId,
+            lockedFxRate: decimal(command.lockedFxRate!),
+          },
+        );
+      }
       const resolved: ResolvedPosting = {
         externalReference: command.externalReference,
         requestId: command.requestId,
@@ -90,25 +134,7 @@ export class PostingService {
         targetAmount: decimal(command.targetAmount),
         fxQuoteId: command.fxQuoteId,
         lockedFxRate: command.lockedFxRate ? decimal(command.lockedFxRate) : undefined,
-        entries: command.entries.map((entry) => {
-          const account = byWallet.get(entry.walletId)!;
-          if (account.currency !== entry.currency || account.status !== 'ACTIVE') {
-            throw new ConflictException({
-              code: 'LEDGER_ACCOUNT_UNAVAILABLE',
-              message: 'A ledger account is unavailable or uses another currency.',
-            });
-          }
-          return {
-            ledgerAccountId: account.id,
-            direction: entry.direction,
-            amount: decimal(entry.amount),
-            currency: entry.currency,
-            fxQuoteId: command.fxQuoteId,
-            lockedFxRate: command.lockedFxRate
-              ? decimal(command.lockedFxRate)
-              : undefined,
-          };
-        }),
+        entries: [...customerEntries, ...clearingEntries],
       };
       return await this.postResolved(resolved, commandHash, options);
     } catch (error) {

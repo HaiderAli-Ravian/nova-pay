@@ -125,10 +125,13 @@ describe('fx-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay FX Service',
-      version: '0.2.0',
+      version: '0.3.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');
+    expect(response.body.paths).toHaveProperty('/fx/quote');
+    expect(response.body.paths).toHaveProperty('/fx/quote/{quoteId}');
+    expect(response.body.paths).toHaveProperty('/internal/fx/quotes/{quoteId}/consume');
   });
 
   it('places the request ID in structured request logs', async () => {
@@ -151,5 +154,14 @@ describe('fx-service bootstrap', () => {
     ).toBe(true);
 
     logSpy.mockRestore();
+  });
+
+  it('rejects unauthenticated internal quote consumption before database access', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/internal/fx/quotes/00000000-0000-4000-8000-000000000000/consume')
+      .send({})
+      .expect(401);
+
+    expect(response.body).toMatchObject({ code: 'INTERNAL_AUTH_REQUIRED' });
   });
 });

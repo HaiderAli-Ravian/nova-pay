@@ -12,11 +12,12 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '../generated/prisma/client.js';
 import { AccountClient, type WalletValidation } from '../clients/account.client.js';
+import { FxClient, type ConsumedQuote } from '../clients/fx.client.js';
 import { LedgerClient, type LedgerPosting } from '../clients/ledger.client.js';
 import { UpstreamHttpError, UpstreamUnavailableError } from '../clients/upstream-error.js';
 import { RequestContextService } from '../common/request-context.service.js';
 import { PrismaService } from '../database/prisma.service.js';
-import { CreateTransferDto } from './dto/create-transfer.dto.js';
+import { CreateInternationalTransferDto, CreateTransferDto } from './dto/create-transfer.dto.js';
 import {
   HistoryPageDto,
   TransferResponseDto,
@@ -42,6 +43,7 @@ export class TransferService {
     private readonly prisma: PrismaService,
     private readonly account: AccountClient,
     private readonly ledger: LedgerClient,
+    private readonly fx: FxClient,
     private readonly requestContext: RequestContextService,
   ) {}
 
@@ -61,6 +63,26 @@ export class TransferService {
 
     await this.transition(claim.transfer.id, 'PENDING', 'PROCESSING');
     return this.process(claim.transfer.id);
+  }
+
+  async createInternational(
+    clientId: string,
+    idempotencyKey: string,
+    command: CreateInternationalTransferDto,
+  ): Promise<TransferExecutionResult> {
+    validateIdempotencyKey(idempotencyKey);
+    validateInternationalCommand(command);
+    const requestHash = canonicalInternationalTransferHash(command);
+    const claim = await this.claimInternational(
+      clientId,
+      idempotencyKey,
+      requestHash,
+      command,
+    );
+    if (!claim.created) {
+      return this.handleExisting(claim.transfer, requestHash);
+    }
+    return this.prepareInternational(claim.transfer);
   }
 
   async getForPrincipal(clientId: string, transferId: string): Promise<TransferResponseDto> {
@@ -137,6 +159,13 @@ export class TransferService {
 
   async reconcile(transferId: string, force = false): Promise<TransferExecutionResult> {
     const transfer = await this.findTransfer(transferId);
+    if (transfer.status === 'PENDING' && transfer.type === 'INTERNATIONAL') {
+      const withIdempotency = await this.prisma.db.transfer.findUniqueOrThrow({
+        where: { id: transfer.id },
+        include: { idempotencyRecord: true },
+      });
+      return this.prepareInternational(withIdempotency);
+    }
     if (transfer.status !== 'PROCESSING') {
       return resultForTransfer(transfer);
     }
@@ -167,7 +196,13 @@ export class TransferService {
   async findStale(limit = 50): Promise<string[]> {
     const staleBefore = new Date(Date.now() - staleProcessingMs());
     const transfers = await this.prisma.db.transfer.findMany({
-      where: { status: 'PROCESSING', updatedAt: { lte: staleBefore } },
+      where: {
+        updatedAt: { lte: staleBefore },
+        OR: [
+          { status: 'PROCESSING' },
+          { status: 'PENDING', type: 'INTERNATIONAL' },
+        ],
+      },
       select: { id: true },
       orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
       take: limit,
@@ -279,6 +314,142 @@ export class TransferService {
     }
   }
 
+  private async claimInternational(
+    clientId: string,
+    key: string,
+    requestHash: string,
+    command: CreateInternationalTransferDto,
+  ): Promise<{ created: boolean; transfer: TransferWithIdempotency }> {
+    const existing = await this.findByKey(clientId, key);
+    if (existing) return { created: false, transfer: existing };
+
+    const transferId = randomUUID();
+    try {
+      const transfer = await this.prisma.db.$transaction(async (transaction) => {
+        const [{ now }] = await transaction.$queryRaw<Array<{ now: Date }>>`
+          SELECT CURRENT_TIMESTAMP AS "now"
+        `;
+        await transaction.transfer.create({
+          data: {
+            id: transferId,
+            clientId,
+            type: 'INTERNATIONAL',
+            status: 'PENDING',
+            senderWalletId: command.senderWalletId,
+            recipientWalletId: command.recipientWalletId,
+            sourceCurrency: command.sourceCurrency,
+            sourceAmount: new Prisma.Decimal(command.sourceAmount),
+            targetCurrency: command.targetCurrency,
+            targetAmount: null,
+            fxQuoteId: command.quoteId,
+            lockedFxRate: null,
+            createdAt: now,
+          },
+        });
+        await transaction.idempotencyRecord.create({
+          data: {
+            clientId,
+            key,
+            requestHash,
+            transferId,
+            replayExpiresAt: new Date(now.getTime() + REPLAY_WINDOW_MS),
+            retentionUntil: new Date(now.getTime() + RETENTION_WINDOW_MS),
+          },
+        });
+        return transaction.transfer.findUniqueOrThrow({
+          where: { id: transferId },
+          include: { idempotencyRecord: true },
+        });
+      });
+      return { created: true, transfer };
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const winner = await this.findByKey(clientId, key);
+        if (winner) return { created: false, transfer: winner };
+        const quoteWinner = await this.prisma.db.transfer.findFirst({
+          where: { fxQuoteId: command.quoteId },
+        });
+        if (quoteWinner) {
+          throw new ConflictException({
+            code: 'QUOTE_ALREADY_USED',
+            message: 'The quote is already bound to another transfer.',
+          });
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async prepareInternational(
+    transfer: TransferWithIdempotency,
+  ): Promise<TransferExecutionResult> {
+    if (transfer.status !== 'PENDING' || transfer.type !== 'INTERNATIONAL' || !transfer.fxQuoteId) {
+      return resultForTransfer(transfer);
+    }
+    let quote: ConsumedQuote;
+    try {
+      quote = await this.fx.consume(transfer.fxQuoteId, {
+        transferId: transfer.id,
+        clientId: transfer.clientId,
+        sourceCurrency: transfer.sourceCurrency,
+        targetCurrency: transfer.targetCurrency,
+        sourceAmount: transfer.sourceAmount.toFixed(8),
+      });
+    } catch (error) {
+      return this.handleFxFailure(transfer, error);
+    }
+
+    const prepared = await this.prisma.db.$transaction(async (transaction) => {
+      const updated = await transaction.transfer.updateMany({
+        where: {
+          id: transfer.id,
+          status: 'PENDING',
+          targetAmount: null,
+          lockedFxRate: null,
+        },
+        data: {
+          targetAmount: new Prisma.Decimal(quote.targetAmount),
+          lockedFxRate: new Prisma.Decimal(quote.rate),
+          status: 'PROCESSING',
+          version: { increment: 1n },
+        },
+      });
+      if (updated.count === 1) {
+        await transaction.transactionHistory.createMany({
+          data: [
+            {
+              transferId: transfer.id,
+              walletId: transfer.senderWalletId,
+              role: 'SENDER',
+              counterpartyWalletId: transfer.recipientWalletId,
+              status: 'PROCESSING',
+              amount: transfer.sourceAmount,
+              currency: transfer.sourceCurrency,
+              fxQuoteId: transfer.fxQuoteId,
+              occurredAt: transfer.createdAt,
+            },
+            {
+              transferId: transfer.id,
+              walletId: transfer.recipientWalletId,
+              role: 'RECIPIENT',
+              counterpartyWalletId: transfer.senderWalletId,
+              status: 'PROCESSING',
+              amount: new Prisma.Decimal(quote.targetAmount),
+              currency: transfer.targetCurrency,
+              fxQuoteId: transfer.fxQuoteId,
+              occurredAt: transfer.createdAt,
+            },
+          ],
+        });
+      }
+      return updated.count === 1;
+    });
+    if (!prepared) {
+      return resultForTransfer(await this.findTransfer(transfer.id));
+    }
+    return this.process(transfer.id);
+  }
+
   private async process(transferId: string): Promise<TransferExecutionResult> {
     const transfer = await this.findTransfer(transferId);
     if (transfer.status !== 'PROCESSING') return resultForTransfer(transfer);
@@ -301,11 +472,17 @@ export class TransferService {
       const posting = await this.ledger.post({
         externalReference: transfer.id,
         requestId: isUuid(contextualRequestId) ? contextualRequestId : randomUUID(),
-        postingType: 'TRANSFER',
+        postingType: transfer.type === 'INTERNATIONAL' ? 'FX_TRANSFER' : 'TRANSFER',
         sourceCurrency: transfer.sourceCurrency,
         targetCurrency: transfer.targetCurrency,
         sourceAmount: amount,
-        targetAmount: amount,
+        targetAmount: transfer.targetAmount!.toFixed(8),
+        ...(transfer.type === 'INTERNATIONAL'
+          ? {
+              fxQuoteId: transfer.fxQuoteId!,
+              lockedFxRate: transfer.lockedFxRate!.toFixed(12),
+            }
+          : {}),
         entries: [
           {
             walletId: transfer.senderWalletId,
@@ -316,7 +493,7 @@ export class TransferService {
           {
             walletId: transfer.recipientWalletId,
             direction: 'CREDIT',
-            amount,
+            amount: transfer.targetAmount!.toFixed(8),
             currency: transfer.targetCurrency,
           },
         ],
@@ -356,6 +533,23 @@ export class TransferService {
     if (error instanceof HttpException) {
       const descriptor = describeHttpException(error);
       return this.fail(transferId, error.getStatus(), descriptor.code, descriptor.message);
+    }
+    throw error;
+  }
+
+  private async handleFxFailure(
+    transfer: Prisma.TransferModel,
+    error: unknown,
+  ): Promise<TransferExecutionResult> {
+    if (error instanceof UpstreamUnavailableError) {
+      return processingResult(transfer);
+    }
+    if (error instanceof UpstreamHttpError) {
+      if (error.status === 401 || error.status === 403 || error.status >= 500) {
+        return processingResult(transfer);
+      }
+      const status = error.status === 404 ? 404 : 409;
+      return this.fail(transfer.id, status, error.code, error.message);
     }
     throw error;
   }
@@ -571,6 +765,21 @@ export function canonicalTransferHash(command: CreateTransferDto): string {
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
+export function canonicalInternationalTransferHash(
+  command: CreateInternationalTransferDto,
+): string {
+  return createHash('sha256').update(JSON.stringify({
+    method: 'POST',
+    route: '/transfers/international',
+    senderWalletId: command.senderWalletId,
+    recipientWalletId: command.recipientWalletId,
+    sourceAmount: new Prisma.Decimal(command.sourceAmount).toFixed(8),
+    sourceCurrency: command.sourceCurrency,
+    targetCurrency: command.targetCurrency,
+    quoteId: command.quoteId,
+  })).digest('hex');
+}
+
 function validateCommand(command: CreateTransferDto): void {
   if (command.senderWalletId === command.recipientWalletId) {
     throw new BadRequestException({
@@ -579,6 +788,27 @@ function validateCommand(command: CreateTransferDto): void {
     });
   }
   if (!new Prisma.Decimal(command.amount).isPositive()) {
+    throw new BadRequestException({
+      code: 'INVALID_TRANSFER_AMOUNT',
+      message: 'Transfer amount must be positive.',
+    });
+  }
+}
+
+function validateInternationalCommand(command: CreateInternationalTransferDto): void {
+  if (command.senderWalletId === command.recipientWalletId) {
+    throw new BadRequestException({
+      code: 'SAME_WALLET_TRANSFER',
+      message: 'Sender and recipient wallets must be different.',
+    });
+  }
+  if (command.sourceCurrency === command.targetCurrency) {
+    throw new BadRequestException({
+      code: 'SAME_CURRENCY_TRANSFER',
+      message: 'International transfer currencies must differ.',
+    });
+  }
+  if (!new Prisma.Decimal(command.sourceAmount).isPositive()) {
     throw new BadRequestException({
       code: 'INVALID_TRANSFER_AMOUNT',
       message: 'Transfer amount must be positive.',
@@ -610,8 +840,7 @@ function validateWallets(
   }
   if (
     sender.currency !== transfer.sourceCurrency ||
-    recipient.currency !== transfer.targetCurrency ||
-    sender.currency !== recipient.currency
+    recipient.currency !== transfer.targetCurrency
   ) {
     throw new ConflictException({
       code: 'CURRENCY_MISMATCH',
@@ -635,11 +864,13 @@ function toResponse(transfer: Prisma.TransferModel): TransferResponseDto {
     status: transfer.status,
     sourceAmount: transfer.sourceAmount.toFixed(8),
     sourceCurrency: transfer.sourceCurrency,
-    targetAmount: (transfer.targetAmount ?? transfer.sourceAmount).toFixed(8),
+    targetAmount: transfer.targetAmount?.toFixed(8) ?? null,
     targetCurrency: transfer.targetCurrency,
     ledgerTransactionId: transfer.ledgerTransactionId,
     completedAt: transfer.completedAt?.toISOString() ?? null,
   };
+  if (transfer.fxQuoteId) response.quoteId = transfer.fxQuoteId;
+  if (transfer.lockedFxRate) response.lockedRate = transfer.lockedFxRate.toFixed(12);
   if (transfer.status === 'PROCESSING' || transfer.status === 'PENDING') {
     response.statusUrl = `/transfers/${transfer.id}`;
   }

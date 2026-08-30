@@ -126,7 +126,7 @@ describe('ledger-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Ledger Service',
-      version: '0.3.0',
+      version: '0.4.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');

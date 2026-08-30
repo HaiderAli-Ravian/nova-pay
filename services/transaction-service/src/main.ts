@@ -17,6 +17,7 @@ async function bootstrap(): Promise<void> {
   requireUrlEnvironmentVariable('DATABASE_URL', ['postgres:', 'postgresql:']);
   requireUrlEnvironmentVariable('ACCOUNT_BASE_URL', ['http:', 'https:']);
   requireUrlEnvironmentVariable('LEDGER_BASE_URL', ['http:', 'https:']);
+  requireUrlEnvironmentVariable('FX_BASE_URL', ['http:', 'https:']);
   requireSecretEnvironmentVariable('INTERNAL_SERVICE_TOKEN');
   readPositiveIntegerEnvironmentVariable('STALE_PROCESSING_MS', 30_000);
   readPositiveIntegerEnvironmentVariable('RECONCILIATION_INTERVAL_MS', 30_000);

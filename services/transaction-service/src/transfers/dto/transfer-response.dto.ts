@@ -13,11 +13,17 @@ export class TransferResponseDto {
   @ApiProperty({ example: 'USD' })
   sourceCurrency!: string;
 
-  @ApiProperty({ example: '100.00000000' })
-  targetAmount!: string;
+  @ApiPropertyOptional({ example: '100.00000000', nullable: true })
+  targetAmount!: string | null;
 
   @ApiProperty({ example: 'USD' })
   targetCurrency!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  quoteId?: string | null;
+
+  @ApiPropertyOptional({ example: '0.920000000000', nullable: true })
+  lockedRate?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   ledgerTransactionId?: string | null;

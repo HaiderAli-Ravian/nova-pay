@@ -57,3 +57,11 @@ export function requireUrlEnvironmentVariable(
 
   return value;
 }
+
+export function requireSecretEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+  if (!value || value.length < 16) {
+    throw new Error(`${name} must contain at least 16 characters.`);
+  }
+  return value;
+}

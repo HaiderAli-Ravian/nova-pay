@@ -10,6 +10,10 @@ export class PrismaService implements OnModuleDestroy {
     await this.getClient().$queryRaw`SELECT 1`;
   }
 
+  get db(): PrismaClient {
+    return this.getClient();
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.client?.$disconnect();
   }
@@ -35,4 +39,3 @@ export class PrismaService implements OnModuleDestroy {
     return this.client;
   }
 }
-

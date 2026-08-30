@@ -127,11 +127,12 @@ describe('transaction-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Transaction Service',
-      version: '0.3.0',
+      version: '0.4.0',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');
     expect(response.body.paths).toHaveProperty('/transfers');
+    expect(response.body.paths).toHaveProperty('/transfers/international');
     expect(response.body.paths['/transfers'].post.responses).toEqual(
       expect.objectContaining({
         '201': expect.any(Object),

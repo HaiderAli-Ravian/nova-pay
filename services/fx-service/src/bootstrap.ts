@@ -39,6 +39,10 @@ export function configureApplication(
     .setDescription(metadata.description)
     .setVersion(metadata.version)
     .addBearerAuth()
+    .addApiKey(
+      { type: 'apiKey', in: 'header', name: 'X-Internal-Service-Token' },
+      'internal-service',
+    )
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
 
@@ -46,4 +50,3 @@ export function configureApplication(
     jsonDocumentUrl: 'docs-json',
   });
 }
-

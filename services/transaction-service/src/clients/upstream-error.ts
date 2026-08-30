@@ -1,6 +1,6 @@
 export class UpstreamHttpError extends Error {
   constructor(
-    readonly service: 'account' | 'ledger',
+    readonly service: 'account' | 'ledger' | 'fx',
     readonly status: number,
     readonly code: string,
     message: string,
@@ -11,7 +11,7 @@ export class UpstreamHttpError extends Error {
 }
 
 export class UpstreamUnavailableError extends Error {
-  constructor(readonly service: 'account' | 'ledger') {
+  constructor(readonly service: 'account' | 'ledger' | 'fx') {
     super(`${service} service is unavailable.`);
     this.name = 'UpstreamUnavailableError';
   }

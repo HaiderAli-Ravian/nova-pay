@@ -7,7 +7,7 @@ export class InternalHttpClient {
   constructor(private readonly requestContext: RequestContextService) {}
 
   async request<T>(
-    service: 'account' | 'ledger',
+    service: 'account' | 'ledger' | 'fx',
     baseUrl: string | undefined,
     path: string,
     init: RequestInit = {},

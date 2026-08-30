@@ -92,6 +92,68 @@ describeWithDatabase('PostingService database integration', () => {
       prisma.db.$executeRaw`UPDATE "ledger_entries" SET "amount" = "amount" WHERE "ledger_transaction_id" = ${posted.id}::uuid`,
     ).rejects.toThrow(/immutable/);
   });
+
+  it('posts an FX transfer balanced independently through clearing accounts', async () => {
+    const sourceWalletId = randomUUID();
+    const targetWalletId = randomUUID();
+    await Promise.all([
+      accounts.provision(sourceWalletId, 'USD'),
+      accounts.provision(targetWalletId, 'EUR'),
+    ]);
+    await postings.fund({
+      externalReference: randomUUID(),
+      requestId: randomUUID(),
+      walletId: sourceWalletId,
+      amount: '100.00000000',
+      currency: 'USD',
+    });
+
+    const fxQuoteId = randomUUID();
+    const posted = await postings.post({
+      externalReference: randomUUID(),
+      requestId: randomUUID(),
+      postingType: PostingTypeDto.FX_TRANSFER,
+      sourceCurrency: 'USD',
+      targetCurrency: 'EUR',
+      sourceAmount: '100.00000000',
+      targetAmount: '92.00000000',
+      fxQuoteId,
+      lockedFxRate: '0.920000000000',
+      entries: [
+        {
+          walletId: sourceWalletId,
+          direction: PostingDirectionDto.DEBIT,
+          amount: '100.00000000',
+          currency: 'USD',
+        },
+        {
+          walletId: targetWalletId,
+          direction: PostingDirectionDto.CREDIT,
+          amount: '92.00000000',
+          currency: 'EUR',
+        },
+      ],
+    });
+
+    expect(posted.postingType).toBe('FX_TRANSFER');
+    expect(posted.entries).toHaveLength(4);
+    for (const currency of ['USD', 'EUR']) {
+      const entries = posted.entries.filter((entry) => entry.currency === currency);
+      const debit = entries.find((entry) => entry.direction === 'DEBIT')!;
+      const credit = entries.find((entry) => entry.direction === 'CREDIT')!;
+      expect(debit.amount).toBe(credit.amount);
+    }
+    const stored = await prisma.db.ledgerTransaction.findUniqueOrThrow({
+      where: { id: posted.id },
+      include: { entries: true },
+    });
+    expect(stored.fxQuoteId).toBe(fxQuoteId);
+    expect(stored.lockedFxRate?.toFixed(12)).toBe('0.920000000000');
+    expect(stored.entries.every((entry) => entry.fxQuoteId === fxQuoteId)).toBe(true);
+    expect(stored.entries.every((entry) => entry.lockedFxRate?.toFixed(12) === '0.920000000000')).toBe(true);
+    expect((await accounts.balance(sourceWalletId)).available).toBe('0.00000000');
+    expect((await accounts.balance(targetWalletId)).available).toBe('92.00000000');
+  });
 });
 
 function transferCommand(

@@ -15,14 +15,16 @@ export interface LedgerPosting {
   }>;
 }
 
-export interface DomesticPostingCommand {
+export interface PostingCommand {
   externalReference: string;
   requestId: string;
-  postingType: 'TRANSFER';
+  postingType: 'TRANSFER' | 'FX_TRANSFER';
   sourceCurrency: string;
   targetCurrency: string;
   sourceAmount: string;
   targetAmount: string;
+  fxQuoteId?: string;
+  lockedFxRate?: string;
   entries: Array<{
     walletId: string;
     direction: 'DEBIT' | 'CREDIT';
@@ -31,11 +33,13 @@ export interface DomesticPostingCommand {
   }>;
 }
 
+export type DomesticPostingCommand = PostingCommand;
+
 @Injectable()
 export class LedgerClient {
   constructor(private readonly http: InternalHttpClient) {}
 
-  post(command: DomesticPostingCommand): Promise<LedgerPosting> {
+  post(command: PostingCommand): Promise<LedgerPosting> {
     return this.http.request(
       'ledger',
       process.env.LEDGER_BASE_URL,

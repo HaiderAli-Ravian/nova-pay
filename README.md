@@ -11,8 +11,9 @@ Docker Compose supplies restricted databases, authenticated Redis, and a single
 Nginx entry point. Account, Transaction, and Ledger provide idempotent wallet
 provisioning, authoritative balances, domestic transfer orchestration, atomic
 double-entry posting, immutable reversals, replay-safe retries, reconciliation,
-and cursor-based wallet history. FX execution, Payroll workers, and observability
-backends remain planned work.
+and cursor-based wallet history. FX quotes and international transfers add
+database-timed expiry, single-use quote consumption, and independently balanced
+currency legs. Payroll workers and observability backends remain planned work.
 
 ## Architecture
 
@@ -179,6 +180,37 @@ Transfer status is available at `GET /transfers/:transferId`. Wallet history is
 available at `GET /wallets/:walletId/transactions?limit=50&cursor=...` and uses an
 opaque cursor over the indexed timestamp/ID ordering rather than deep offsets.
 
+## FX quotes and international transfers
+
+Every quote request calls the provider abstraction and persists its exact rate,
+amounts, provider reference, database issue time, and expiry exactly 60 seconds
+later:
+
+```bash
+curl -X POST http://localhost:8080/fx/quote \
+  -H 'Authorization: Bearer alice' \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceCurrency":"USD","targetCurrency":"EUR","sourceAmount":"100.00000000"}'
+```
+
+Use the returned `quoteId` once with the matching owner, amount, and currencies:
+
+```bash
+curl -X POST http://localhost:8080/transfers/international \
+  -H 'Authorization: Bearer alice' \
+  -H 'Idempotency-Key: international-2026-08-30-001' \
+  -H 'Content-Type: application/json' \
+  -d '{"senderWalletId":"34c25a45-3293-41bb-9f56-6ef234f53394","recipientWalletId":"27eed329-3aaf-4713-9ed7-a607781766b5","sourceAmount":"100.00000000","sourceCurrency":"USD","targetCurrency":"EUR","quoteId":"e7ac7ee1-3834-4a09-8ac5-8524384314d3"}'
+```
+
+Consumption uses database time and a conditional update. The same transfer ID
+may safely retry; another consumer receives `409 QUOTE_ALREADY_USED`, and an
+expired quote receives `409 QUOTE_EXPIRED`. Once consumed, a quote is never
+released after downstream failure. Ledger stores the quote ID/rate on the
+transaction and all four entries, balancing source and target currencies
+independently through clearing accounts. Provider failure returns
+`503 FX_PROVIDER_UNAVAILABLE` and creates no cached or stale substitute quote.
+
 ## Persistence boundaries
 
 - `account_db` owns users and wallet metadata, never balances.
@@ -194,7 +226,6 @@ application clients expose both as Prisma `Decimal` values.
 
 ## Documentation still to complete with implementation
 
-- FX quote expiry and single-use behavior
 - Payroll concurrency and resumability
 - Audit hash-chain verification
 - Observability and alerting

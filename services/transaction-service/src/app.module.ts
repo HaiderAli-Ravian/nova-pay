@@ -9,6 +9,7 @@ import { PrincipalService } from './auth/principal.service.js';
 import { AccountClient } from './clients/account.client.js';
 import { InternalHttpClient } from './clients/internal-http.client.js';
 import { LedgerClient } from './clients/ledger.client.js';
+import { FxClient } from './clients/fx.client.js';
 import { HttpExceptionFilter } from './common/http-exception.filter.js';
 import { InternalServiceGuard } from './common/internal-service.guard.js';
 import { RequestContextMiddleware } from './common/request-context.middleware.js';
@@ -35,6 +36,7 @@ import { TransferService } from './transfers/transfer.service.js';
     InternalHttpClient,
     AccountClient,
     LedgerClient,
+    FxClient,
     TransferService,
     ReconciliationService,
     {
