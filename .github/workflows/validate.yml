@@ -1,0 +1,173 @@
+name: Validation
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+
+jobs:
+  detect-changes:
+    name: Detect affected services
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      has_services: ${{ steps.detect.outputs.has_services }}
+      infrastructure_changed: ${{ steps.detect.outputs.infrastructure_changed }}
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test CI helpers
+        run: npm run test:ci-tools
+
+      - name: Detect changes and validate service versions
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: >-
+          node tools/ci/affected-services.mjs
+          --mode "$EVENT_NAME"
+          --base "$BASE_SHA"
+          --head "$GITHUB_SHA"
+          --github-output "$GITHUB_OUTPUT"
+          --step-summary "$GITHUB_STEP_SUMMARY"
+
+  service-validation:
+    name: ${{ matrix.service }} ${{ matrix.version }}
+    if: needs.detect-changes.outputs.has_services == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect-changes.outputs.matrix) }}
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: novapay_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d novapay_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:8.10.0-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Apply service migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/novapay_test
+        run: npm run prisma:migrate:deploy --workspace "${{ matrix.workspace }}"
+
+      - name: Test service
+        env:
+          ACCOUNT_TEST_DATABASE_URL: ${{ matrix.service == 'account-service' && 'postgresql://postgres:postgres@127.0.0.1:5432/novapay_test' || '' }}
+          ADMIN_TEST_DATABASE_URL: ${{ matrix.service == 'admin-service' && 'postgresql://postgres:postgres@127.0.0.1:5432/novapay_test' || '' }}
+          FX_TEST_DATABASE_URL: ${{ matrix.service == 'fx-service' && 'postgresql://postgres:postgres@127.0.0.1:5432/novapay_test' || '' }}
+          LEDGER_TEST_DATABASE_URL: ${{ matrix.service == 'ledger-service' && 'postgresql://postgres:postgres@127.0.0.1:5432/novapay_test' || '' }}
+          PAYROLL_TEST_DATABASE_URL: ${{ matrix.service == 'payroll-service' && 'postgresql://postgres:postgres@127.0.0.1:5432/novapay_test' || '' }}
+          PAYROLL_TEST_REDIS_URL: ${{ matrix.service == 'payroll-service' && 'redis://127.0.0.1:6379' || '' }}
+          TRANSFER_TEST_DATABASE_URL: ${{ matrix.service == 'transaction-service' && 'postgresql://postgres:postgres@127.0.0.1:5432/novapay_test' || '' }}
+        run: npm test --workspace "${{ matrix.workspace }}" -- --runInBand --silent
+
+      - name: Build service
+        run: npm run build --workspace "${{ matrix.workspace }}"
+
+      - name: Build versioned image
+        run: >-
+          docker build
+          --label "org.opencontainers.image.revision=$GITHUB_SHA"
+          --label "org.opencontainers.image.version=${{ matrix.version }}"
+          -f "${{ matrix.directory }}/Dockerfile"
+          -t "nova-pay/${{ matrix.service }}:${{ matrix.version }}"
+          .
+
+  infrastructure-validation:
+    name: Validate infrastructure configuration
+    if: needs.detect-changes.outputs.infrastructure_changed == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Compose and dashboard configuration
+        run: |
+          docker compose --env-file infra/.env.example -f infra/docker-compose.yml config --quiet
+          node -e "JSON.parse(require('node:fs').readFileSync('infra/grafana/dashboards/novapay-overview.json', 'utf8'))"
+
+      - name: Validate Prometheus configuration and rules
+        run: |
+          docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" prom/prometheus:v3.7.3 promtool check config /etc/prometheus/prometheus.yml
+          docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" prom/prometheus:v3.7.3 promtool check rules /etc/prometheus/alerts.yml
+
+      - name: Validate Collector configuration
+        run: >-
+          docker run --rm
+          -v "$PWD/infra/otel-collector/config.yml:/etc/otelcol-contrib/config.yml:ro"
+          otel/opentelemetry-collector-contrib:0.140.1
+          validate --config=/etc/otelcol-contrib/config.yml
+
+      - name: Validate Nginx configuration
+        run: >-
+          docker run --rm
+          --add-host account-service:127.0.0.1
+          --add-host transaction-service:127.0.0.1
+          --add-host ledger-service:127.0.0.1
+          --add-host fx-service:127.0.0.1
+          --add-host payroll-service:127.0.0.1
+          --add-host admin-service:127.0.0.1
+          -v "$PWD/infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
+          nginx:1.31.4-alpine nginx -t
+
+  required-validation:
+    name: Required validation
+    if: always()
+    needs:
+      - detect-changes
+      - service-validation
+      - infrastructure-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce required results
+        env:
+          DETECTION_RESULT: ${{ needs.detect-changes.result }}
+          SERVICE_RESULT: ${{ needs.service-validation.result }}
+          INFRASTRUCTURE_RESULT: ${{ needs.infrastructure-validation.result }}
+        run: |
+          test "$DETECTION_RESULT" = success
+          case "$SERVICE_RESULT" in success|skipped) ;; *) exit 1 ;; esac
+          case "$INFRASTRUCTURE_RESULT" in success|skipped) ;; *) exit 1 ;; esac

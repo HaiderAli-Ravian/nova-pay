@@ -322,6 +322,24 @@ To verify the stack after Compose starts:
    only with the isolated integration-test fixture, never by corrupting a
    development database.
 
+## Continuous integration
+
+The `Validation` workflow calculates the comparison base for pull requests and
+pushes, maps changed paths to a stable service matrix, and safely selects every
+service when history or shared impact is ambiguous. Documentation-only changes
+skip service builds. Any change under a service directory must increase that
+service's semantic version relative to the base revision.
+
+Each selected service receives an isolated PostgreSQL database and Redis,
+applies its own migrations, runs its database/queue-enabled test suite, compiles,
+and builds an image tagged `nova-pay/<service>:<package-version>`. Infrastructure
+changes additionally validate Compose, Prometheus rules, Collector configuration,
+the Grafana dashboard, and Nginx configuration. The stable `Required validation`
+job fails when detection, any selected service, or infrastructure validation
+fails; configure that exact job as the required branch-protection check. The
+workflow has read-only repository permissions and does not publish images or use
+registry credentials.
+
 ## Persistence boundaries
 
 - `account_db` owns users and wallet metadata, never balances.
@@ -337,6 +355,5 @@ application clients expose both as Prisma `Decimal` values.
 
 ## Remaining release verification
 
-- Capture Compose-backed success and provider-failure trace evidence.
 - Exercise and record the Prometheus alert lifecycle in an isolated environment.
-- Complete clean-checkout and Docker smoke verification.
+- Complete clean-checkout, documented-scenario, and restart-persistence verification.

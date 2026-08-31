@@ -108,7 +108,11 @@ Ledger entries remain the primary financial evidence. Audit metadata never copie
 
 Services use NestJS Logger with request context, Prometheus/Grafana metrics, and OpenTelemetry traces exported through a Collector to Jaeger. Relevant logs contain UTC timestamp, request ID, trace ID when tracing is enabled, user ID when known, and transaction ID when known. Identifiers are not Prometheus labels.
 
-The provisioned dashboard covers successful and failed Transaction request rates, HTTP p95/p99 latency, and the Ledger invariant gauge. Any invariant value above zero fires an immediate critical alert. The runtime demonstration procedure covers a complete transfer trace and the explicit FX-provider quote-acquisition failure trace; captured Docker evidence remains a release-verification item.
+The provisioned dashboard covers successful and failed Transaction request rates, HTTP p95/p99 latency, and the Ledger invariant gauge. Any invariant value above zero fires an immediate critical alert. Compose verification captured a complete transfer trace across Account, Transaction, and Ledger plus an FX-provider quote-acquisition trace whose provider span ended in error with no settlement span. Live firing and resolution of the nonzero Ledger alert remains a final isolated-fixture check.
+
+## Continuous integration
+
+One least-privilege workflow computes a null-safe changed-path matrix from the pull-request merge base or push-before revision. Direct service changes require a strictly greater semantic version. Shared, infrastructure, workflow, helper, unknown, or unavailable-base changes select all services; public-documentation-only changes select none. Each selected service applies its migrations to an isolated PostgreSQL database, runs integration-eligible tests with Redis available, compiles, and builds `nova-pay/<service>:<package-version>`. A stable `Required validation` aggregate is the branch-protection check. Image publication remains deliberately disabled until a protected registry and immutable-tag policy exist.
 
 ## Time-pressure tradeoffs
 

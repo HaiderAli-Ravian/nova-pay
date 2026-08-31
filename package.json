@@ -22,6 +22,7 @@
     "prisma:generate": "npm run prisma:generate --workspaces --if-present",
     "prisma:validate": "npm run prisma:validate --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "test:cov": "npm run test:cov --workspaces --if-present"
+    "test:cov": "npm run test:cov --workspaces --if-present",
+    "test:ci-tools": "node --test tools/ci/*.test.mjs"
   }
 }
