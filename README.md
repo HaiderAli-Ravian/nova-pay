@@ -21,6 +21,39 @@ All services expose low-cardinality Prometheus metrics and OpenTelemetry traces;
 the local stack includes Prometheus, Grafana, an OpenTelemetry Collector, and
 Jaeger, plus an immediate critical Ledger invariant alert.
 
+## Quick API review with Postman
+
+Import these two files into Postman:
+
+- [NovaPay API collection](postman/NovaPay.postman_collection.json)
+- [NovaPay Local Review environment](postman/NovaPay.local.postman_environment.json)
+
+With Docker Desktop running, start the ready-to-test review stack from the
+repository root:
+
+```bash
+docker compose \
+  --env-file .env.example \
+  -f infra/docker-compose.yml \
+  -f postman/docker-compose.yml \
+  up --build --wait
+```
+
+Select the `NovaPay Local Review` environment in Postman and run the collection
+in its existing numbered order. Docker automatically creates PostgreSQL, all six
+logical databases and roles, runs every migration, starts authenticated Redis,
+the six services, the Payroll worker, Nginx, and the observability stack. The
+local-only Compose override enables loopback-only controlled funding for the
+demonstration.
+
+The collection then creates Alice and Bob's currency-specific wallets, funds
+Alice, stores test identity data, captures generated IDs, and tests balances,
+domestic retry safety, transaction history, FX, an international transfer,
+asynchronous payroll, audit verification, and service readiness. No IDs or
+environment values need to be entered manually. A complete run contains 27
+requests and 55 assertions. See [Postman collection](#postman-collection) for
+the detailed workflow and teardown command.
+
 ## Architecture
 
 NovaPay is a monorepo containing six independently structured NestJS services:
