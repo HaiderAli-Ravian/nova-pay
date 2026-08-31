@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -42,6 +44,7 @@ export class PayrollController {
   ) {}
 
   @Post()
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiAcceptedResponse({ type: PayrollJobResponseDto })
   @ApiBadRequestResponse({ type: ErrorResponseDto })

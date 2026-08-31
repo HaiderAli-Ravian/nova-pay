@@ -4,6 +4,8 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   Post,
   Req,
@@ -58,6 +60,7 @@ export class AdminAuditController {
   ) {}
 
   @Post('verify')
+  @HttpCode(HttpStatus.OK)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOkResponse({ type: AuditVerificationResponseDto })
   @ApiBadRequestResponse({ type: ErrorResponseDto })

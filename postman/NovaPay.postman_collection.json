@@ -1,0 +1,484 @@
+{
+  "info": {
+    "_postman_id": "b3efce9e-3df2-4f97-8576-3b6d4439d3c5",
+    "name": "NovaPay Local API Review",
+    "description": "Ordered local-review collection for the public NovaPay API. Run with the NovaPay Local Review environment and the documented Postman Compose override. Setup requests create wallets, capture IDs, and use the loopback-only controlled funding route before financial flows.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{userPrincipal}}", "type": "string" }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response has a request ID when supplied by the application', function () {",
+          "  if (pm.response.headers.has('X-Request-Id')) pm.expect(pm.response.headers.get('X-Request-Id')).to.be.a('string');",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Setup",
+      "description": "Idempotent setup. Run this folder first. Dynamic IDs are written into the selected environment.",
+      "item": [
+        {
+          "name": "Create Alice USD wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Wallet is active', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.environment.set('senderWalletId', body.id);",
+                  "  pm.environment.set('auditStreamKey', `wallet:${body.id}`);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{senderWalletIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currency\": \"{{sourceCurrency}}\",\n  \"label\": \"{{senderWalletLabel}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/wallets",
+            "description": "Creates or replays Alice's source wallet and stores senderWalletId."
+          }
+        },
+        {
+          "name": "Create Bob USD wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Recipient USD wallet is active', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+                  "if (pm.response.code < 300) pm.environment.set('recipientWalletId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{recipientPrincipal}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{recipientUsdWalletIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currency\": \"{{sourceCurrency}}\",\n  \"label\": \"{{recipientUsdWalletLabel}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/wallets",
+            "description": "Creates or replays Bob's domestic recipient wallet."
+          }
+        },
+        {
+          "name": "Create Bob EUR wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Recipient EUR wallet is active', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+                  "if (pm.response.code < 300) pm.environment.set('targetWalletId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{recipientPrincipal}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{recipientEurWalletIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currency\": \"{{targetCurrency}}\",\n  \"label\": \"{{recipientEurWalletLabel}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/wallets",
+            "description": "Creates or replays Bob's international recipient wallet."
+          }
+        },
+        {
+          "name": "Apply controlled local funding",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Controlled funding posted', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "X-Internal-Service-Token", "value": "{{internalServiceToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"externalReference\": \"{{fundingExternalReference}}\",\n  \"requestId\": \"{{fundingRequestId}}\",\n  \"walletId\": \"{{senderWalletId}}\",\n  \"amount\": \"{{fundingAmount}}\",\n  \"currency\": \"{{sourceCurrency}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{ledgerBaseUrl}}/internal/ledger/test-funding",
+            "description": "Local review only. The Postman Compose override binds Ledger to loopback and enables this idempotent funding fixture. It remains disabled in the normal stack."
+          }
+        },
+        {
+          "name": "Store Alice identity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Identity stored', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"{{legalName}}\",\n  \"email\": \"{{email}}\",\n  \"phone\": \"{{phone}}\",\n  \"postalAddress\": \"{{postalAddress}}\",\n  \"governmentId\": \"{{governmentId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/users/me/identity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Account",
+      "item": [
+        {
+          "name": "List Alice wallets",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/wallets" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Wallet list returned', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Get authoritative balance",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/wallets/{{senderWalletId}}/balance" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Funded balance returned', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().available).to.eql(pm.environment.get('fundingAmount')); });"] } }]
+        },
+        {
+          "name": "Get Alice identity",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/users/me/identity" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Identity returned', function () { pm.response.to.have.status(200); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "03 - Domestic Transfer and History",
+      "item": [
+        {
+          "name": "Create domestic transfer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Domestic transfer completed', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); pm.expect(pm.response.json().status).to.eql('COMPLETED'); });",
+                  "if (pm.response.code < 300) pm.environment.set('domesticTransferId', pm.response.json().transferId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{domesticIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderWalletId\": \"{{senderWalletId}}\",\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"{{domesticAmount}}\",\n  \"currency\": \"{{sourceCurrency}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/transfers"
+          }
+        },
+        {
+          "name": "Replay domestic transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{domesticIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderWalletId\": \"{{senderWalletId}}\",\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"{{domesticAmount}}\",\n  \"currency\": \"{{sourceCurrency}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/transfers",
+            "description": "Uses the same key and canonical payload; the stored transfer is returned without a second debit."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Replay returns the original transfer', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); pm.expect(pm.response.json().transferId).to.eql(pm.environment.get('domesticTransferId')); });"] } }]
+        },
+        {
+          "name": "Get domestic transfer",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/transfers/{{domesticTransferId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Transfer returned', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Get sender transaction history",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/wallets/{{senderWalletId}}/transactions?limit=50" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('History contains bounded items', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().items.length).to.be.at.most(50); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "04 - FX and International Transfer",
+      "item": [
+        {
+          "name": "Create FX quote",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Fresh quote created', function () { pm.response.to.have.status(201); pm.expect(pm.response.json().valid).to.eql(true); });",
+                  "if (pm.response.code < 300) pm.environment.set('quoteId', pm.response.json().quoteId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json", "type": "text" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCurrency\": \"{{sourceCurrency}}\",\n  \"targetCurrency\": \"{{targetCurrency}}\",\n  \"sourceAmount\": \"{{internationalAmount}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/fx/quote"
+          }
+        },
+        {
+          "name": "Get FX quote",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/fx/quote/{{quoteId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Quote returned', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Create international transfer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('International transfer completed', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); pm.expect(pm.response.json().status).to.eql('COMPLETED'); });",
+                  "if (pm.response.code < 300) pm.environment.set('internationalTransferId', pm.response.json().transferId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{internationalIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderWalletId\": \"{{senderWalletId}}\",\n  \"recipientWalletId\": \"{{targetWalletId}}\",\n  \"sourceAmount\": \"{{internationalAmount}}\",\n  \"sourceCurrency\": \"{{sourceCurrency}}\",\n  \"targetCurrency\": \"{{targetCurrency}}\",\n  \"quoteId\": \"{{quoteId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/transfers/international"
+          }
+        },
+        {
+          "name": "Get international transfer",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/transfers/{{internationalTransferId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('International transfer returned', function () { pm.response.to.have.status(200); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "05 - Payroll",
+      "item": [
+        {
+          "name": "Submit payroll job",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payroll accepted', function () { pm.response.to.have.status(202); });",
+                  "if (pm.response.code < 300) pm.environment.set('payrollJobId', pm.response.json().jobId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{employerPrincipal}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{payrollIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceWalletId\": \"{{senderWalletId}}\",\n  \"currency\": \"{{sourceCurrency}}\",\n  \"items\": [\n    {\n      \"externalItemId\": \"employee-001-local-review\",\n      \"recipientWalletId\": \"{{recipientWalletId}}\",\n      \"amount\": \"{{payrollAmount}}\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/jobs"
+          }
+        },
+        {
+          "name": "Get payroll progress",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["setTimeout(function () {}, 1000);"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payroll progress returned', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Payroll completed successfully', function () { const body = pm.response.json(); pm.expect(body.status).to.eql('COMPLETED'); pm.expect(body.completedItems).to.eql(1); pm.expect(body.failedItems).to.eql(0); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{employerPrincipal}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/payroll/jobs/{{payrollJobId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Admin Audit",
+      "item": [
+        {
+          "name": "Verify wallet audit stream",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{operatorPrincipal}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Idempotency-Key", "value": "{{auditVerifyIdempotencyKey}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamKey\": \"{{auditStreamKey}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/admin/audit/verify"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Audit stream is valid', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().valid).to.eql(true); });"] } }]
+        },
+        {
+          "name": "List wallet audit records",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{operatorPrincipal}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/audit/streams/{{auditStreamKey}}/records"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Audit records returned', function () { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.be.an('array'); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "07 - Operational Surfaces",
+      "auth": { "type": "noauth" },
+      "item": [
+        {
+          "name": "Gateway liveness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/health/live" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Gateway is live', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Account readiness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/services/account/health/ready" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Account is ready', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Transaction readiness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/services/transaction/health/ready" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Transaction is ready', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Ledger readiness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/services/ledger/health/ready" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Ledger is ready', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "FX readiness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/services/fx/health/ready" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('FX is ready', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Payroll readiness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/services/payroll/health/ready" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Payroll is ready', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Admin readiness",
+          "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/services/admin/health/ready" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Admin is ready', function () { pm.response.to.have.status(200); });"] } }]
+        }
+      ]
+    }
+  ]
+}

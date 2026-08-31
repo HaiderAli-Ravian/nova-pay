@@ -30,12 +30,49 @@ Redis are reserved for asynchronous payroll processing. Each service owns a
 separate logical PostgreSQL database; the Ledger Service is the sole source of
 financial truth.
 
+```mermaid
+flowchart LR
+  Client[API client] --> Gateway[Nginx API gateway]
+
+  Gateway --> Account[Account Service]
+  Gateway --> Transaction[Transaction Service]
+  Gateway --> FX[FX Service]
+  Gateway --> Payroll[Payroll Service]
+  Gateway --> Admin[Admin Service]
+
+  Transaction --> Account
+  Transaction --> FX
+  Transaction --> Ledger[Ledger Service]
+  Payroll --> Account
+  Payroll --> Transaction
+  Payroll <--> Queue[Redis and BullMQ]
+  Account --> Ledger
+  Account --> Admin
+
+  Account --> AccountDB[(account_db)]
+  Transaction --> TransactionDB[(transaction_db)]
+  Ledger --> LedgerDB[(ledger_db)]
+  FX --> FXDB[(fx_db)]
+  Payroll --> PayrollDB[(payroll_db)]
+  Admin --> AdminDB[(admin_db)]
+
+  Services[All six services] --> Prometheus
+  Services --> Collector[OpenTelemetry Collector]
+  Collector --> Jaeger
+  Prometheus --> Grafana
+```
+
+Only the gateway publishes application routes. Internal service endpoints and
+all data stores remain on the private Compose network.
+
 ## Repository layout
 
 ```text
 services/   Service applications
 infra/      Local infrastructure and observability configuration
+postman/    Importable local-review collection, environment, and Compose override
 .github/    Service-aware CI/CD workflows
+API_EXAMPLES.md  Public gateway request/response and error examples
 ```
 
 ## Prerequisites
@@ -66,14 +103,19 @@ npm run test --workspace @novapay/account-service
 
 ## Run the complete local stack
 
-Create a private local environment file from the safe placeholders, replace every
-value, validate the resolved stack, and start it:
+Create a private local environment file from the ready-to-run local test
+defaults, validate the resolved stack, and start it:
 
 ```bash
-cp infra/.env.example infra/.env
-docker compose --env-file infra/.env -f infra/docker-compose.yml config
-docker compose --env-file infra/.env -f infra/docker-compose.yml up --build --wait
+cp .env.example .env
+docker compose --env-file .env -f infra/docker-compose.yml config
+docker compose --env-file .env -f infra/docker-compose.yml up --build --wait
 ```
+
+The root `.env.example` is the canonical template for the complete Compose
+stack. Files under `services/*/.env.example` are only for running an individual
+service directly during development. The committed values are deliberately
+local-only test credentials; replace them for any shared or non-local environment.
 
 The database initializer creates six databases and six restricted login roles.
 One-shot migration containers must finish successfully before application
@@ -99,7 +141,7 @@ Useful gateway URLs:
 Stop the stack without deleting persisted data:
 
 ```bash
-docker compose --env-file infra/.env -f infra/docker-compose.yml down
+docker compose --env-file .env -f infra/docker-compose.yml down
 ```
 
 Changing database passwords after first initialization requires an intentional
@@ -133,6 +175,52 @@ The default service ports are:
 
 Override a service port with `PORT`. `NODE_ENV` accepts `development`, `test`,
 or `production`; invalid startup configuration fails immediately.
+
+## Public API examples
+
+[API_EXAMPLES.md](API_EXAMPLES.md) contains gateway-based request and response
+examples for every public business endpoint, the operational health/Swagger
+surfaces, authentication conventions, and material error codes.
+
+## Postman collection
+
+Import both files into Postman and select the `NovaPay Local Review`
+environment:
+
+- `postman/NovaPay.postman_collection.json`
+- `postman/NovaPay.local.postman_environment.json`
+
+For a fresh reviewer run, copy `.env.example` to `.env` and start the local
+review profile:
+
+```bash
+docker compose --env-file .env \
+  -f infra/docker-compose.yml \
+  -f postman/docker-compose.yml \
+  up --build --wait
+```
+
+Run the collection in its numbered order. It creates the Alice/Bob wallets,
+stores encrypted test identity data, captures every generated ID, applies one
+idempotent funding fixture, and then exercises domestic replay, FX,
+international transfer, payroll, audit, history, and health requests. No
+Postman variable needs editing when `.env` was copied from `.env.example`.
+The clean-stack verification executes 27 requests and 55 assertions with no
+failures, including a completed background payroll item.
+
+The Postman override binds Ledger only to `127.0.0.1:3003` and enables its
+controlled funding route in development mode. The normal Compose stack keeps
+that route disabled and Ledger unpublished. If using an existing custom `.env`,
+set the Postman `internalServiceToken` variable to the same local token.
+
+Stop and remove only the local review stack with:
+
+```bash
+docker compose --env-file .env \
+  -f infra/docker-compose.yml \
+  -f postman/docker-compose.yml \
+  down --volumes
+```
 
 ## Build a service image
 
@@ -355,5 +443,4 @@ application clients expose both as Prisma `Decimal` values.
 
 ## Remaining release verification
 
-- Exercise and record the Prometheus alert lifecycle in an isolated environment.
-- Complete clean-checkout, documented-scenario, and restart-persistence verification.
+- Verify tracked-file hygiene, branch protection, and the live workflow on the public repository.

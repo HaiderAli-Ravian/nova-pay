@@ -132,7 +132,7 @@ describe('admin-service bootstrap', () => {
 
     expect(response.body.info).toMatchObject({
       title: 'NovaPay Admin Service',
-      version: '0.4.0',
+      version: '0.4.1',
     });
     expect(response.body.paths).toHaveProperty('/health/live');
     expect(response.body.paths).toHaveProperty('/health/ready');

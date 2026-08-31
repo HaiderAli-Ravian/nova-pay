@@ -1,0 +1,7 @@
+services:
+  ledger-service:
+    environment:
+      NODE_ENV: development
+      ENABLE_TEST_FUNDING: "true"
+    ports:
+      - "127.0.0.1:3003:3003"

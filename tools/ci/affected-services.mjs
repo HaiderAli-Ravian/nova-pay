@@ -43,6 +43,14 @@ export function classifyChanges(paths) {
       continue;
     }
 
+    if (file === 'postman/docker-compose.yml') {
+      infrastructureChanged = true;
+      allServices = true;
+      continue;
+    }
+
+    if (file.startsWith('postman/')) continue;
+
     if (
       file.startsWith('.github/') ||
       file.startsWith('tools/ci/') ||
@@ -54,7 +62,7 @@ export function classifyChanges(paths) {
 
     if (
       file.startsWith('docs/') ||
-      /^(README|decisions|LICENSE|SECURITY|CONTRIBUTING)(?:\.md)?$/i.test(file)
+      /^(README|API_EXAMPLES|decisions|LICENSE|SECURITY|CONTRIBUTING)(?:\.md)?$/i.test(file)
     ) {
       continue;
     }

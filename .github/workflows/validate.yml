@@ -126,7 +126,8 @@ jobs:
 
       - name: Validate Compose and dashboard configuration
         run: |
-          docker compose --env-file infra/.env.example -f infra/docker-compose.yml config --quiet
+          docker compose --env-file .env.example -f infra/docker-compose.yml config --quiet
+          docker compose --env-file .env.example -f infra/docker-compose.yml -f postman/docker-compose.yml config --quiet
           node -e "JSON.parse(require('node:fs').readFileSync('infra/grafana/dashboards/novapay-overview.json', 'utf8'))"
 
       - name: Validate Prometheus configuration and rules

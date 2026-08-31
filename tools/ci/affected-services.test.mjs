@@ -38,7 +38,22 @@ test('selects every service for shared, workflow, infrastructure, and unknown pa
 });
 
 test('does not build services for public documentation-only changes', () => {
-  assert.deepEqual(classifyChanges(['README.md', 'decisions.md']).selected, []);
+  assert.deepEqual(
+    classifyChanges([
+      'README.md',
+      'API_EXAMPLES.md',
+      'decisions.md',
+      'postman/NovaPay.postman_collection.json',
+      'postman/NovaPay.local.postman_environment.json',
+    ]).selected,
+    [],
+  );
+});
+
+test('treats the Postman Compose override as infrastructure', () => {
+  const result = classifyChanges(['postman/docker-compose.yml']);
+  assert.deepEqual(result.selected, [...SERVICES]);
+  assert.equal(result.infrastructureChanged, true);
 });
 
 test('rejects invalid semantic versions', () => {

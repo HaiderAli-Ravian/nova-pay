@@ -4,7 +4,7 @@ This document records the decisions that materially affect correctness, reliabil
 
 ## Architecture
 
-NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction is currently `0.6.0`; Account and Ledger are `0.5.0`; FX, Payroll, and Admin are `0.4.0`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
+NovaPay uses six independently packaged NestJS services in one npm-workspace monorepo: Account, Transaction, Ledger, FX, Payroll, and Admin. The services use native ESM, share one deterministic root lockfile, and retain independent package versions, tests, and Docker images. Transaction is currently `0.6.0`; Account and Ledger are `0.5.0`; FX is `0.4.0`; and Payroll and Admin are `0.4.1`. The boundaries match data ownership and system responsibilities without adding a runtime shared package.
 
 All external traffic enters through Nginx. Immediate request/response operations use synchronous HTTP. BullMQ and Redis are limited to asynchronous payroll processing. The design intentionally excludes Kafka, RabbitMQ, a general event bus, Kubernetes, GraphQL, and saga frameworks because they are not required to protect the central financial invariant and would add operational paths that cannot be justified within the assessment.
 
@@ -108,7 +108,7 @@ Ledger entries remain the primary financial evidence. Audit metadata never copie
 
 Services use NestJS Logger with request context, Prometheus/Grafana metrics, and OpenTelemetry traces exported through a Collector to Jaeger. Relevant logs contain UTC timestamp, request ID, trace ID when tracing is enabled, user ID when known, and transaction ID when known. Identifiers are not Prometheus labels.
 
-The provisioned dashboard covers successful and failed Transaction request rates, HTTP p95/p99 latency, and the Ledger invariant gauge. Any invariant value above zero fires an immediate critical alert. Compose verification captured a complete transfer trace across Account, Transaction, and Ledger plus an FX-provider quote-acquisition trace whose provider span ended in error with no settlement span. Live firing and resolution of the nonzero Ledger alert remains a final isolated-fixture check.
+The provisioned dashboard covers successful and failed Transaction request rates, HTTP p95/p99 latency, and the Ledger invariant gauge. Any invariant value above zero fires an immediate critical alert. Compose verification captured a complete transfer trace across Account, Transaction, and Ledger plus an FX-provider quote-acquisition trace whose provider span ended in error with no settlement span. A disposable missing-journal fixture changed the gauge to one and made the critical Prometheus alert fire immediately; removing the fixture and re-verifying returned the gauge to zero and resolved the alert.
 
 ## Continuous integration
 
@@ -123,8 +123,4 @@ One least-privilege workflow computes a null-safe changed-path matrix from the p
 - The Admin Service is intentionally small and API-only.
 - Environment-held encryption keys are a local reproducibility compromise; production requires managed KMS/HSM controls.
 - PostgreSQL is sufficient for indexed history in the assessment; a new datastore is not introduced without measured need.
-- Local burst/load evidence will report exact environment and limitations and will not be presented as a production capacity guarantee.
-
-## Implementation-dependent items
-
-The final document will add verified references to migrations, test cases, Swagger routes, dashboards, traces, and load results as they are completed. If an implemented detail differs from a decision above, the decision and its tests must be updated together before submission.
+- The recorded warm-cache load profile is bounded local evidence and is not presented as a production capacity guarantee.

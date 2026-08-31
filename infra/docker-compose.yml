@@ -23,14 +23,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: novapay_admin
-      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?Set POSTGRES_SUPERUSER_PASSWORD in infra/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?Set POSTGRES_SUPERUSER_PASSWORD in .env}
       POSTGRES_DB: postgres
-      ACCOUNT_DB_PASSWORD: ${ACCOUNT_DB_PASSWORD:?Set ACCOUNT_DB_PASSWORD in infra/.env}
-      TRANSACTION_DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?Set TRANSACTION_DB_PASSWORD in infra/.env}
-      LEDGER_DB_PASSWORD: ${LEDGER_DB_PASSWORD:?Set LEDGER_DB_PASSWORD in infra/.env}
-      FX_DB_PASSWORD: ${FX_DB_PASSWORD:?Set FX_DB_PASSWORD in infra/.env}
-      PAYROLL_DB_PASSWORD: ${PAYROLL_DB_PASSWORD:?Set PAYROLL_DB_PASSWORD in infra/.env}
-      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:?Set ADMIN_DB_PASSWORD in infra/.env}
+      ACCOUNT_DB_PASSWORD: ${ACCOUNT_DB_PASSWORD:?Set ACCOUNT_DB_PASSWORD in .env}
+      TRANSACTION_DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?Set TRANSACTION_DB_PASSWORD in .env}
+      LEDGER_DB_PASSWORD: ${LEDGER_DB_PASSWORD:?Set LEDGER_DB_PASSWORD in .env}
+      FX_DB_PASSWORD: ${FX_DB_PASSWORD:?Set FX_DB_PASSWORD in .env}
+      PAYROLL_DB_PASSWORD: ${PAYROLL_DB_PASSWORD:?Set PAYROLL_DB_PASSWORD in .env}
+      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:?Set ADMIN_DB_PASSWORD in .env}
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -47,7 +47,7 @@ services:
     image: redis:8.10.0-alpine
     restart: unless-stopped
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in infra/.env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
     command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
     volumes:
       - redis-data:/data
@@ -126,10 +126,10 @@ services:
       DATABASE_URL: postgresql://account_user:${ACCOUNT_DB_PASSWORD}@postgres:5432/account_db
       LEDGER_BASE_URL: http://ledger-service:3003
       ADMIN_BASE_URL: http://admin-service:3006
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
-      IDENTITY_ACTIVE_KEY_VERSION: ${IDENTITY_ACTIVE_KEY_VERSION:?Set IDENTITY_ACTIVE_KEY_VERSION in infra/.env}
-      IDENTITY_KEK_RING: ${IDENTITY_KEK_RING:?Set IDENTITY_KEK_RING in infra/.env}
-      IDENTITY_LOOKUP_HMAC_KEY: ${IDENTITY_LOOKUP_HMAC_KEY:?Set IDENTITY_LOOKUP_HMAC_KEY in infra/.env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
+      IDENTITY_ACTIVE_KEY_VERSION: ${IDENTITY_ACTIVE_KEY_VERSION:?Set IDENTITY_ACTIVE_KEY_VERSION in .env}
+      IDENTITY_KEK_RING: ${IDENTITY_KEK_RING:?Set IDENTITY_KEK_RING in .env}
+      IDENTITY_LOOKUP_HMAC_KEY: ${IDENTITY_LOOKUP_HMAC_KEY:?Set IDENTITY_LOOKUP_HMAC_KEY in .env}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3001"]
     depends_on:
@@ -155,8 +155,8 @@ services:
       ACCOUNT_BASE_URL: http://account-service:3001
       LEDGER_BASE_URL: http://ledger-service:3003
       FX_BASE_URL: http://fx-service:3004
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
-      HISTORY_CURSOR_HMAC_KEY: ${HISTORY_CURSOR_HMAC_KEY:?Set HISTORY_CURSOR_HMAC_KEY in infra/.env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
+      HISTORY_CURSOR_HMAC_KEY: ${HISTORY_CURSOR_HMAC_KEY:?Set HISTORY_CURSOR_HMAC_KEY in .env}
       STALE_PROCESSING_MS: "30000"
       RECONCILIATION_INTERVAL_MS: "30000"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
@@ -181,7 +181,7 @@ services:
       NODE_ENV: production
       PORT: 3003
       DATABASE_URL: postgresql://ledger_user:${LEDGER_DB_PASSWORD}@postgres:5432/ledger_db
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       ENABLE_TEST_FUNDING: "false"
       LEDGER_INVARIANT_INTERVAL_MS: "15000"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
@@ -206,7 +206,7 @@ services:
       NODE_ENV: production
       PORT: 3004
       DATABASE_URL: postgresql://fx_user:${FX_DB_PASSWORD}@postgres:5432/fx_db
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       FX_PROVIDER_MODE: normal
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3004"]
@@ -225,7 +225,7 @@ services:
     build:
       context: ..
       dockerfile: services/payroll-service/Dockerfile
-    image: nova-pay/payroll-service:0.4.0
+    image: nova-pay/payroll-service:0.4.1
     environment:
       NODE_ENV: production
       PORT: 3005
@@ -233,7 +233,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ACCOUNT_BASE_URL: http://account-service:3001
       TRANSACTION_BASE_URL: http://transaction-service:3002
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       PAYROLL_WORKER_ENABLED: "false"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3005"]
@@ -255,7 +255,7 @@ services:
 
   payroll-worker:
     <<: *service-defaults
-    image: nova-pay/payroll-service:0.4.0
+    image: nova-pay/payroll-service:0.4.1
     command: ["node", "--import", "./dist/observability/register.js", "dist/worker.js"]
     environment:
       NODE_ENV: production
@@ -263,7 +263,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ACCOUNT_BASE_URL: http://account-service:3001
       TRANSACTION_BASE_URL: http://transaction-service:3002
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       PAYROLL_WORKER_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     depends_on:
@@ -281,12 +281,12 @@ services:
     build:
       context: ..
       dockerfile: services/admin-service/Dockerfile
-    image: nova-pay/admin-service:0.4.0
+    image: nova-pay/admin-service:0.4.1
     environment:
       NODE_ENV: production
       PORT: 3006
       DATABASE_URL: postgresql://admin_user:${ADMIN_DB_PASSWORD}@postgres:5432/admin_db
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in infra/.env}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     expose: ["3006"]
     depends_on:
